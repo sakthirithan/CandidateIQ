@@ -3,7 +3,9 @@ export { default as ApplicationTracker } from './ApplicationTracker';
 export { default as CandidateDashboard } from './CandidateDashboard';
 export { default as CandidateIQDashboard } from './CandidateIQDashboard';
 export { default as CandidateIQProfile } from './CandidateIQProfile';
+export { default as InterviewEvaluationAnalytics } from './InterviewEvaluationAnalytics';
 export { default as InterviewResults } from './InterviewResults';
+
 export { default as JobDiscovery } from './JobDiscovery';
 export { default as JobMatchingView } from './JobMatchingView';
 export { default as MockInterviewRoom } from './MockInterviewRoom';

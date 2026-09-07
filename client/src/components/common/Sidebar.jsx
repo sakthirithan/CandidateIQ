@@ -155,17 +155,20 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
                 <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/20 text-white">LIVE</span>
               </button>
 
-              <button onClick={() => setActiveTab('interview-results')} className={getNavButtonClass('interview-results', true)}>
+              <button onClick={() => setActiveTab('interview-evaluation')} className={getNavButtonClass('interview-evaluation', true)}>
                 <div className="flex items-center gap-3">
-                  <Award className="w-4 h-4" /> Interview Scorecard
+                  <Award className="w-4 h-4" /> Interview Evaluation
                 </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500 text-white">M11</span>
               </button>
 
               <button onClick={() => setActiveTab('skill-gaps')} className={getNavButtonClass('skill-gaps', true)}>
                 <div className="flex items-center gap-3">
-                  <BookOpen className="w-4 h-4" /> Skill Gap Analytics
+                  <BookOpen className="w-4 h-4" /> Skill Gap Analysis
                 </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500 text-white">M12</span>
               </button>
+
             </div>
           </>
         )}
@@ -179,7 +182,9 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
                 <div className="flex items-center gap-3">
                   <LayoutDashboard className="w-4 h-4" /> Talent Command Center
                 </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M14</span>
               </button>
+
 
               <button onClick={() => setActiveTab('jobs-recruiter')} className={getNavButtonClass('jobs-recruiter')}>
                 <div className="flex items-center gap-3">
@@ -191,7 +196,9 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
                 <div className="flex items-center gap-3">
                   <Users className="w-4 h-4" /> Candidate Pool
                 </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M15</span>
               </button>
+
             </div>
 
             <div className="space-y-1 pt-3 border-t border-slate-100">
@@ -201,23 +208,34 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
 
               <button onClick={() => setActiveTab('candidate-intelligence')} className={getNavButtonClass('candidate-intelligence', true)}>
                 <div className="flex items-center gap-3">
-                  <Zap className="w-4 h-4" /> Candidate Profiling
+                  <Zap className="w-4 h-4" /> Candidate Intelligence
                 </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M13</span>
+              </button>
+
+
+              <button onClick={() => setActiveTab('interview-evaluation')} className={getNavButtonClass('interview-evaluation', true)}>
+                <div className="flex items-center gap-3">
+                  <Award className="w-4 h-4" /> Interview Analytics
+                </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500 text-white">M11</span>
               </button>
 
               <button onClick={() => setActiveTab('comparison')} className={getNavButtonClass('comparison', true)}>
                 <div className="flex items-center gap-3">
-                  <BarChart3 className="w-4 h-4" /> Comparison Matrix
+                  <BarChart3 className="w-4 h-4" /> Candidate Comparison
                 </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500 text-white">M16</span>
               </button>
 
               <button onClick={() => setActiveTab('assistant')} className={getNavButtonClass('assistant', true)}>
                 <div className="flex items-center gap-3">
-                  <Sparkles className="w-4 h-4" /> AI Data Assistant
+                  <Sparkles className="w-4 h-4" /> AI Recruitment Assistant
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-white/20 text-white">2.0</span>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M17</span>
               </button>
             </div>
+
           </>
         )}
 
@@ -226,8 +244,9 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
             <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Admin Control</span>
             <button onClick={() => setActiveTab('admin-dashboard')} className={getNavButtonClass('admin-dashboard')}>
               <div className="flex items-center gap-3">
-                <LayoutDashboard className="w-4 h-4" /> System Analytics & Logs
+                <LayoutDashboard className="w-4 h-4" /> System Administration
               </div>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-900 text-white">M18</span>
             </button>
           </div>
         )}

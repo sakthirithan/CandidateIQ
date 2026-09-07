@@ -1,20 +1,24 @@
 import React, { useState, useEffect } from 'react';
 import LandingPage from './components/LandingPage';
 import {
-  Sidebar, Topbar, NotificationCenter, SettingsPage, SettingsModal
+  Sidebar, Topbar, NotificationCenter, SettingsPage, SettingsModal, ErrorBoundary, GlobalSearchPalette
 } from './components/common';
 import {
   CandidateIQDashboard, CandidateIQProfile, ResumeIntelligence, SkillIntelligence,
-  JobDiscovery, AIMockInterviewRoom, InterviewResults, SkillGapIntelligence, ApplicationTracker
+  JobDiscovery, AIMockInterviewRoom, InterviewResults, InterviewEvaluationAnalytics, SkillGapIntelligence, ApplicationTracker
 } from './components/candidate';
+
 import {
   RecruiterIQDashboard, RecruiterJobManagement, CandidateIntelligenceProfile,
-  CandidateIQComparison, AIRecruitmentAssistantIQ
+  RecruiterCandidateManagement, CandidateIQComparison, AIRecruitmentAssistantIQ
 } from './components/recruiter';
+
 import { LoginModal, RegisterModal, PaymentDemoModal } from './components/auth';
+import { AdminManagement } from './components/admin';
 import DemoModal from './components/demo/DemoModal';
 
 import { getCurrentUser, logoutUser, initAuthStorage, updateUser } from './utils/auth';
+import { mockNotificationService } from './services/mockApi/notificationService';
 
 function App() {
   const [activeTab, setActiveTab] = useState('landing');
@@ -25,6 +29,7 @@ function App() {
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [pendingHrUser, setPendingHrUser] = useState(null);
   const [interviewReport, setInterviewReport] = useState(null);
 
@@ -34,7 +39,33 @@ function App() {
     if (user) {
       setCurrentUser(user);
     }
+
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsSearchOpen((prev) => !prev);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
+
+  const userRole = currentUser ? currentUser.role : 'guest';
+
+  const [unreadCount, setUnreadCount] = useState(() => {
+    const roleForNotif = userRole === 'hr' ? 'recruiter' : (userRole === 'admin' ? 'recruiter' : 'candidate');
+    return mockNotificationService.getUnreadCount(roleForNotif);
+  });
+
+  useEffect(() => {
+    const roleForNotif = userRole === 'hr' ? 'recruiter' : (userRole === 'admin' ? 'recruiter' : 'candidate');
+    setUnreadCount(mockNotificationService.getUnreadCount(roleForNotif));
+
+    const unsubscribe = mockNotificationService.subscribe(() => {
+      setUnreadCount(mockNotificationService.getUnreadCount(roleForNotif));
+    });
+    return () => unsubscribe();
+  }, [userRole]);
 
   const handleRoleChange = (newRole) => {
     const updated = updateUser({ role: newRole });
@@ -86,8 +117,6 @@ function App() {
     setActiveTab('landing');
   };
 
-  const userRole = currentUser ? currentUser.role : 'guest';
-
   return (
     <div className="min-h-screen bg-slate-50 flex text-slate-900 font-sans antialiased">
       {/* Global Sidebar Shell (Hidden on Landing page) */}
@@ -110,10 +139,11 @@ function App() {
             userRole={userRole}
             onOpenAuth={() => setIsLoginModalOpen(true)}
             onOpenNotifications={() => setIsNotifOpen(true)}
+            onOpenSearch={() => setIsSearchOpen(true)}
             onOpenSettings={() => setIsSettingsModalOpen(true)}
             onNavigateToProfile={() => setActiveTab('profile')}
             onLogout={handleLogout}
-            unreadCount={3}
+            unreadCount={unreadCount}
           />
         )}
 
@@ -151,44 +181,37 @@ function App() {
             <AIMockInterviewRoom
               onComplete={(report) => {
                 setInterviewReport(report);
-                setActiveTab('interview-results');
+                setActiveTab('interview-evaluation');
               }}
             />
           )}
           {activeTab === 'interview-results' && <InterviewResults report={interviewReport} />}
+          {activeTab === 'interview-evaluation' && <InterviewEvaluationAnalytics initialReport={interviewReport} />}
           {activeTab === 'skill-gaps' && <SkillGapIntelligence />}
+
 
           {/* Recruiter Routes */}
           {activeTab === 'recruiter-dashboard' && <RecruiterIQDashboard onNavigate={setActiveTab} />}
           {activeTab === 'jobs-recruiter' && <RecruiterJobManagement />}
-          {activeTab === 'candidates-recruiter' && <CandidateIntelligenceProfile />}
-          {activeTab === 'candidate-intelligence' && <CandidateIntelligenceProfile />}
+          {activeTab === 'candidates-recruiter' && (
+            <ErrorBoundary title="Candidate Management Error">
+              <RecruiterCandidateManagement onNavigate={setActiveTab} />
+            </ErrorBoundary>
+          )}
+          {activeTab === 'candidate-intelligence' && (
+            <ErrorBoundary title="Candidate Intelligence Profile Error">
+              <CandidateIntelligenceProfile />
+            </ErrorBoundary>
+          )}
           {activeTab === 'comparison' && <CandidateIQComparison />}
           {activeTab === 'assistant' && <AIRecruitmentAssistantIQ />}
 
+
           {/* Admin Route */}
-          {activeTab === 'admin-dashboard' && (
-            <div className="p-8 space-y-6 max-w-4xl mx-auto select-none">
-              <h2 className="text-xl font-bold font-outfit text-slate-900">CandidateIQ System Operations & AI Metrics</h2>
-              <div className="grid grid-cols-3 gap-4 text-center">
-                <div className="saas-card p-5 bg-white border border-slate-200">
-                  <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Total Registered Accounts</span>
-                  <h3 className="text-3xl font-black mt-1 font-outfit text-slate-900">1,420</h3>
-                </div>
-                <div className="saas-card p-5 bg-white border border-slate-200">
-                  <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Gemini 2.0 API Invocations</span>
-                  <h3 className="text-3xl font-black mt-1 font-outfit text-indigo-600">14,890</h3>
-                </div>
-                <div className="saas-card p-5 bg-white border border-slate-200">
-                  <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Activated HR Licenses</span>
-                  <h3 className="text-3xl font-black mt-1 font-outfit text-emerald-600">84 Active</h3>
-                </div>
-              </div>
-            </div>
-          )}
+          {activeTab === 'admin-dashboard' && <AdminManagement />}
 
           {/* Settings Route */}
-          {activeTab === 'settings' && <SettingsPage />}
+          {activeTab === 'settings' && <SettingsPage userRole={userRole} currentUser={currentUser} />}
         </main>
       </div>
 
@@ -242,6 +265,17 @@ function App() {
       <NotificationCenter
         isOpen={isNotifOpen}
         onClose={() => setIsNotifOpen(false)}
+        userRole={userRole}
+      />
+
+      {/* Global Command/Search Palette (Module 21) */}
+      <GlobalSearchPalette
+        isOpen={isSearchOpen}
+        onClose={() => setIsSearchOpen(false)}
+        onNavigate={(targetTab) => {
+          setActiveTab(targetTab);
+          setIsSearchOpen(false);
+        }}
         userRole={userRole}
       />
     </div>

@@ -148,5 +148,60 @@ export const mockCandidates = [
         'Enhance client-side state caching strategies in React workflows.'
       ]
     }
+  },
+  {
+    id: 'cand_3',
+    userId: 'usr_4',
+    name: 'Sarah Wilson',
+    email: 'sarah@example.com',
+    headline: 'Senior Backend Systems & Cloud Engineer',
+    location: 'Seattle, WA (On-site)',
+    phone: '+1 (555) 789-0123',
+    overallScore: 83,
+    scores: {
+      technical: 81,
+      behavioural: 89,
+      jobMatch: 79,
+      experience: 84,
+      interview: 82,
+      resume: 85
+    },
+    skills: [
+      { name: 'Java / Spring', level: 'Expert', years: 6, category: 'Backend', confidence: 94 },
+      { name: 'PostgreSQL', level: 'Advanced', years: 5, category: 'Database', confidence: 91 },
+      { name: 'Docker', level: 'Expert', years: 4, category: 'DevOps', confidence: 92 },
+      { name: 'AWS Cloud', level: 'Advanced', years: 4, category: 'DevOps', confidence: 88 }
+    ],
+    experiences: [
+      {
+        id: 'exp_4',
+        title: 'Senior Systems Engineer',
+        company: 'DataStream Systems',
+        period: '2020 - Present',
+        description: 'Managed Kubernetes microservice clusters and database failover replication.'
+      }
+    ],
+    education: [
+      { id: 'edu_3', degree: 'B.S. in Software Engineering', institution: 'University of Washington', year: '2020', gpa: '3.7' }
+    ],
+    projects: [
+      { id: 'proj_3', name: 'High-Throughput Event Broker', tech: 'Java, Kafka, Docker', url: 'https://github.com/example/event-broker', description: 'Distributed event processing pipeline handling 10k msg/sec.' }
+    ],
+    certifications: [
+      { id: 'cert_4', name: 'CKA Certified Kubernetes Administrator', issuer: 'CNCF', year: '2023' }
+    ],
+    resumeDetails: {
+      parsedDate: '2026-08-15',
+      filename: 'Sarah_Wilson_Backend_Resume.pdf',
+      completeness: '92%',
+      extractedSkillsCount: 15,
+      keyStrengths: [
+        'Exceptional behavioral evidence & team leadership history.',
+        'Extensive enterprise backend & cloud infrastructure experience.'
+      ],
+      improvementAreas: [
+        'Widen frontend React SPA development experience.'
+      ]
+    }
   }
 ];

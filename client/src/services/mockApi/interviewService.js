@@ -135,14 +135,86 @@ export const mockInterviewService = {
     if (session) {
       session.state = 'Completed';
       session.completedAt = new Date().toISOString();
-      session.overallScore = 87;
-      session.technicalScore = 90;
-      session.communicationScore = 85;
-      session.confidenceScore = 86;
+      session.overallScore = 83;
+      session.scores = {
+        technical: 86,
+        relevance: 88,
+        depth: 79,
+        problemSolving: 82,
+        communication: 78,
+        behaviouralEvidence: 85
+      };
       session.summary = `Candidate completed ${session.answers.length} evaluation questions for ${session.targetJobTitle} (${session.interviewType} - ${session.difficulty}).`;
       interviewsStore.unshift(session);
     }
     return session;
+  },
+
+  evaluateQAPairs: async (qaList = []) => {
+    await new Promise((r) => setTimeout(r, 300));
+
+    if (!qaList || qaList.length === 0) {
+      return interviewsStore[0];
+    }
+
+    // Dynamic scoring calculation based on response quality metrics
+    const totalChars = qaList.reduce((acc, curr) => acc + (curr.answer?.length || 0), 0);
+    const avgLen = totalChars / (qaList.length || 1);
+
+    const calcTech = Math.min(95, Math.max(65, Math.round(75 + (avgLen > 100 ? 11 : 5))));
+    const calcRel = Math.min(96, Math.max(70, Math.round(80 + (qaList.length > 1 ? 8 : 4))));
+    const calcDepth = Math.min(92, Math.max(60, Math.round(70 + (avgLen > 150 ? 9 : 4))));
+    const calcProb = Math.min(94, Math.max(65, Math.round(74 + (avgLen > 120 ? 8 : 3))));
+    const calcComm = Math.min(90, Math.max(60, Math.round(72 + (avgLen > 80 ? 6 : 2))));
+    const calcBeh = Math.min(93, Math.max(65, Math.round(78 + (qaList.length > 2 ? 7 : 3))));
+
+    const overallScore = Math.round((calcTech + calcRel + calcDepth + calcProb + calcComm + calcBeh) / 6);
+
+    const questionAnalysis = qaList.map((item, idx) => {
+      const qNum = idx + 1;
+      const ansLen = item.answer?.length || 0;
+      const score = qNum === 1 ? 88 : qNum === 2 ? 72 : Math.min(95, Math.max(65, Math.round(75 + ansLen / 10)));
+      
+      return {
+        questionId: item.questionId || qNum,
+        question: item.question || `Question ${qNum}`,
+        candidateResponse: item.answer || 'No response recorded',
+        score: score,
+        strength: score >= 80 ? 'Strong technical understanding and architectural clarity' : 'Good foundational awareness',
+        improvement: score < 80 ? 'Explain implementation details more clearly, including edge case handling and metrics' : 'Include more quantitative system metrics in STAR framework'
+      };
+    });
+
+    const evaluatedReport = {
+      id: `eval_${Date.now()}`,
+      completedDate: new Date().toISOString().split('T')[0],
+      overallScore,
+      scores: {
+        technical: calcTech,
+        relevance: calcRel,
+        depth: calcDepth,
+        problemSolving: calcProb,
+        communication: calcComm,
+        behaviouralEvidence: calcBeh
+      },
+      evaluations: questionAnalysis,
+      behaviouralEvidence: [
+        {
+          category: 'Evidence of Collaboration',
+          details: 'Mentions working with product managers, cross-functional code reviews, and pair-programming onboarding sessions.'
+        },
+        {
+          category: 'Evidence of Ownership',
+          details: 'Demonstrates accountability for production deployment monitoring, API migration RFCs, and blameless incident post-mortems.'
+        },
+        {
+          category: 'Evidence of Problem Solving',
+          details: 'Uses APM trace logs, MongoDB explain execution stats, and targeted indexing strategies to reduce query latency.'
+        }
+      ]
+    };
+
+    return evaluatedReport;
   },
 
   submitInterview: async (interviewData) => {
@@ -150,12 +222,14 @@ export const mockInterviewService = {
     const newInterview = {
       id: `int_${Date.now()}`,
       completedDate: new Date().toISOString().split('T')[0],
-      overallScore: interviewData.overallScore || 87,
-      breakdown: {
-        technicalDepth: 89,
-        problemSolving: 86,
-        communication: 84,
-        behaviouralEvidence: 88
+      overallScore: interviewData.overallScore || 83,
+      scores: {
+        technical: 86,
+        relevance: 88,
+        depth: 79,
+        problemSolving: 82,
+        communication: 78,
+        behaviouralEvidence: 85
       },
       ...interviewData
     };
@@ -163,3 +237,4 @@ export const mockInterviewService = {
     return newInterview;
   }
 };
+

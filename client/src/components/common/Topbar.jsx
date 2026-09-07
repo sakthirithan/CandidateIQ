@@ -2,7 +2,7 @@ import React from 'react';
 import ProfileMenu from './ProfileMenu';
 import { Search, Bell, Sparkles, User, ShieldCheck, Command } from 'lucide-react';
 
-function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCount, onOpenSettings, onNavigateToProfile, onLogout }) {
+function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCount, onOpenSettings, onNavigateToProfile, onLogout, onOpenSearch }) {
   const getPageTitle = () => {
     switch (activeTab) {
       case 'dashboard': return 'Candidate Overview Dashboard';
@@ -19,6 +19,7 @@ function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCo
       case 'candidate-intelligence': return 'Candidate Intelligence Profile';
       case 'comparison': return 'Multi-Candidate Comparison Matrix';
       case 'assistant': return 'AI Recruitment Assistant';
+      case 'admin-dashboard': return 'Admin Management Center';
       case 'settings': return 'Account & Platform Settings';
       default: return 'CandidateIQ Platform';
     }
@@ -39,12 +40,17 @@ function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCo
       {/* Global Search & Action Controls */}
       <div className="flex items-center gap-3 md:gap-4">
         {/* Global Search Input */}
-        <div className="relative w-56 md:w-72 hidden sm:block">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+        <div
+          onClick={onOpenSearch}
+          className="relative w-56 md:w-72 hidden sm:block cursor-pointer group"
+        >
+          <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 absolute left-3 top-2.5 transition-colors" />
           <input
             type="text"
-            placeholder="Search candidates, skills, jobs..."
-            className="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-12 py-1.5 text-xs text-slate-700 placeholder-slate-400 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all shadow-2xs"
+            readOnly
+            onClick={onOpenSearch}
+            placeholder="Search candidates, skills, jobs... (Cmd+K)"
+            className="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-12 py-1.5 text-xs text-slate-700 placeholder-slate-400 cursor-pointer focus:outline-none group-hover:border-indigo-300 transition-all shadow-2xs"
           />
           <div className="absolute right-2.5 top-2 flex items-center gap-0.5 text-[10px] text-slate-400 font-semibold bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-2xs">
             <Command className="w-2.5 h-2.5" /> K
