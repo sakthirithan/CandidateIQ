@@ -8,7 +8,7 @@ const candidateProfileSchema = new mongoose.Schema(
       required: true
     },
     userIdString: {
-      type: String // Fallback string representation for in-memory or custom ID
+      type: String
     },
     personalInfo: {
       name: { type: String, required: true },
@@ -23,15 +23,23 @@ const candidateProfileSchema = new mongoose.Schema(
         degree: String,
         institution: String,
         graduationYear: String,
-        cgpa: String
+        year: String,
+        cgpa: String,
+        description: String
       }
     ],
     experience: [
       {
         company: String,
+        organization: String,
         position: String,
+        role: String,
         duration: String,
-        responsibilities: [String]
+        startDate: String,
+        endDate: String,
+        description: String,
+        responsibilities: [String],
+        technologies: [String]
       }
     ],
     skills: {
@@ -44,6 +52,7 @@ const candidateProfileSchema = new mongoose.Schema(
     projects: [
       {
         name: String,
+        title: String,
         description: String,
         technologies: [String],
         role: String,
@@ -53,8 +62,22 @@ const candidateProfileSchema = new mongoose.Schema(
     certifications: [
       {
         name: String,
+        title: String,
         issuer: String,
-        date: String
+        organization: String,
+        date: String,
+        year: String
+      }
+    ],
+    customSections: [
+      {
+        sectionId: { type: String, required: true },
+        sectionType: { type: String, default: 'custom' },
+        title: { type: String, required: true },
+        content: String,
+        items: [mongoose.Schema.Types.Mixed],
+        createdAt: { type: Date, default: Date.now },
+        updatedAt: { type: Date, default: Date.now }
       }
     ],
     skillAnalysis: {
@@ -62,6 +85,15 @@ const candidateProfileSchema = new mongoose.Schema(
       confidenceScore: { type: Number, default: 85 },
       topSkills: [String],
       inferredLevels: mongoose.Schema.Types.Mixed
+    },
+    resumeReference: {
+      resumeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Resume' },
+      fileName: String,
+      fileUrl: String,
+      uploadedAt: Date,
+      parsedAt: Date,
+      updatedAt: Date,
+      status: { type: String, default: 'confirmed' }
     }
   },
   { timestamps: true }

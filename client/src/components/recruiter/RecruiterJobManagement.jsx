@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import recruiterService from '../../services/recruiter/recruiterService';
+import { formatExperience, formatSalary } from '../../utils/formatters';
 import {
   Briefcase, Plus, Search, Edit2, Trash2, CheckCircle2,
   X, Users, Play, Lock, Sparkles, MapPin, DollarSign,
-  AlertTriangle, RefreshCw
+  AlertTriangle, RefreshCw, Clock
 } from 'lucide-react';
 
 function RecruiterJobManagement() {
@@ -21,13 +22,18 @@ function RecruiterJobManagement() {
     department: 'Engineering',
     location: '',
     employmentType: 'Full-time',
-    experienceLevel: '2-4 Years',
-    education: "Bachelor's Degree",
-    salary: '$120,000 - $150,000',
+    education: "Bachelor's Degree in CS or related field",
     status: 'published',
     requiredSkills: '',
     preferredSkills: '',
-    description: ''
+    description: '',
+    expMin: 2,
+    expMax: 5,
+    expUnit: 'years',
+    salMin: 400000,
+    salMax: 800000,
+    salCurrency: 'INR',
+    salPeriod: 'year'
   });
 
   // Confirmation Action Modal State
@@ -46,7 +52,7 @@ function RecruiterJobManagement() {
 
   const showToast = (msg, type = 'success') => {
     setNotification({ msg, type });
-    setTimeout(() => setNotification(null), 3500);
+    setTimeout(() => setNotification(null), 4000);
   };
 
   const fetchJobs = useCallback(async () => {
@@ -89,13 +95,18 @@ function RecruiterJobManagement() {
       department: 'Engineering',
       location: 'Remote / Hybrid',
       employmentType: 'Full-time',
-      experienceLevel: '2-4 Years',
       education: "Bachelor's Degree in CS or equivalent",
-      salary: '$130,000 - $160,000',
       status: 'published',
       requiredSkills: 'React, Node.js, JavaScript, MongoDB',
       preferredSkills: 'Docker, AWS, Express',
-      description: 'We are seeking a skilled engineer to join our team to lead scalable module development, API integration, and AI features.'
+      description: 'We are seeking a skilled engineer to join our team to lead scalable module development, API integration, and AI features.',
+      expMin: 2,
+      expMax: 5,
+      expUnit: 'years',
+      salMin: 400000,
+      salMax: 800000,
+      salCurrency: 'INR',
+      salPeriod: 'year'
     });
     setSelectedJob(null);
     setActiveModal('create');
@@ -108,53 +119,109 @@ function RecruiterJobManagement() {
       department: job.department || 'Engineering',
       location: job.location || '',
       employmentType: job.employmentType || 'Full-time',
-      experienceLevel: job.experienceLevel || '2-4 Years',
       education: job.education || "Bachelor's Degree",
-      salary: job.salary || '$120,000 - $150,000',
       status: job.status || 'published',
       requiredSkills: Array.isArray(job.requiredSkills) ? job.requiredSkills.join(', ') : job.requiredSkills || '',
       preferredSkills: Array.isArray(job.preferredSkills) ? job.preferredSkills.join(', ') : job.preferredSkills || '',
-      description: job.description || ''
+      description: job.description || '',
+      expMin: job.experience?.min !== undefined ? job.experience.min : 2,
+      expMax: job.experience?.max !== undefined ? job.experience.max : 5,
+      expUnit: job.experience?.unit || 'years',
+      salMin: job.salary?.min !== undefined ? job.salary.min : 400000,
+      salMax: job.salary?.max !== undefined ? job.salary.max : 800000,
+      salCurrency: job.salary?.currency || 'INR',
+      salPeriod: job.salary?.period || 'year'
     });
     setActiveModal('edit');
   };
 
-  // Submit Form -> Trigger Confirmation Dialog
+  // Submit Form -> Trigger Confirmation Dialog with Validation
   const handleFormSubmit = (e) => {
     e.preventDefault();
-    if (!formData.title.trim() || !formData.description.trim()) return;
+    if (!formData.title.trim() || !formData.description.trim()) {
+      showToast('Please fill in job title and description.', 'error');
+      return;
+    }
+
+    // Frontend Validation
+    const expMin = Number(formData.expMin);
+    const expMax = Number(formData.expMax);
+    if (isNaN(expMin) || expMin < 0) {
+      showToast('Minimum experience must be a non-negative number.', 'error');
+      return;
+    }
+    if (isNaN(expMax) || expMax < expMin) {
+      showToast('Maximum experience must be greater than or equal to minimum experience.', 'error');
+      return;
+    }
+
+    const salMin = Number(formData.salMin);
+    const salMax = Number(formData.salMax);
+    if (isNaN(salMin) || salMin < 0) {
+      showToast('Minimum salary must be a non-negative number.', 'error');
+      return;
+    }
+    if (isNaN(salMax) || salMax < salMin) {
+      showToast('Maximum salary must be greater than or equal to minimum salary.', 'error');
+      return;
+    }
 
     const payload = {
       title: formData.title.trim(),
       department: formData.department.trim(),
       location: formData.location.trim() || 'Remote',
       employmentType: formData.employmentType,
-      experienceLevel: formData.experienceLevel,
       education: formData.education,
       status: formData.status,
       requiredSkills: formData.requiredSkills.split(',').map((s) => s.trim()).filter(Boolean),
       preferredSkills: formData.preferredSkills.split(',').map((s) => s.trim()).filter(Boolean),
-      description: formData.description.trim()
+      description: formData.description.trim(),
+      experience: {
+        min: expMin,
+        max: expMax,
+        unit: formData.expUnit
+      },
+      salary: {
+        min: salMin,
+        max: salMax,
+        currency: formData.salCurrency,
+        period: formData.salPeriod
+      }
     };
+
+    const formattedExpText = formatExperience(payload.experience);
+    const formattedSalText = formatSalary(payload.salary);
 
     if (activeModal === 'create') {
       setConfirmModal({
         isOpen: true,
-        title: 'Create Job Requisition',
-        message: `Are you sure you want to publish new job posting "${payload.title}" to MongoDB?`,
+        title: 'Create Job Requisition?',
+        message: `Please confirm job posting details below:`,
         actionType: 'create',
         pendingPayload: payload,
         targetJob: null,
+        formattedDetails: {
+          title: payload.title,
+          experience: formattedExpText,
+          salary: formattedSalText,
+          location: payload.location
+        },
         submitting: false
       });
     } else if (activeModal === 'edit' && selectedJob) {
       setConfirmModal({
         isOpen: true,
-        title: 'Update Job Requisition',
-        message: `Are you sure you want to save changes to job posting "${payload.title}"?`,
+        title: 'Save Changes to Job Requisition?',
+        message: `Please confirm updated job posting details below:`,
         actionType: 'edit',
         pendingPayload: payload,
         targetJob: selectedJob,
+        formattedDetails: {
+          title: payload.title,
+          experience: formattedExpText,
+          salary: formattedSalText,
+          location: payload.location
+        },
         submitting: false
       });
     }
@@ -212,6 +279,7 @@ function RecruiterJobManagement() {
         actionType: null,
         pendingPayload: null,
         targetJob: null,
+        formattedDetails: null,
         submitting: false
       });
     }
@@ -318,7 +386,7 @@ function RecruiterJobManagement() {
         <div
           className={`p-4 rounded-2xl border text-xs flex items-center gap-2.5 shadow-sm animate-fade-in ${
             notification.type === 'error'
-              ? 'bg-rose-50 border-rose-200 text-rose-900'
+              ? 'bg-rose-50 border-rose-200 text-rose-900 font-semibold'
               : notification.type === 'info'
               ? 'bg-slate-900 text-white border-slate-800'
               : 'bg-emerald-50 border-emerald-200 text-emerald-900 font-medium'
@@ -380,6 +448,8 @@ function RecruiterJobManagement() {
           {filteredJobs.map((job) => {
             const isDraft = (job.status || '').toLowerCase() === 'draft';
             const isPublished = (job.status || '').toLowerCase() === 'published';
+            const expFormatted = formatExperience(job.experience, job.experienceLevel);
+            const salFormatted = formatSalary(job.salary, job.salary);
 
             return (
               <div
@@ -400,7 +470,10 @@ function RecruiterJobManagement() {
                         <MapPin className="w-3.5 h-3.5 text-slate-400" /> {job.location || 'Remote'}
                       </span>
                       <span className="flex items-center gap-1">
-                        <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> {job.salary || 'Market Rate'}
+                        <Clock className="w-3.5 h-3.5 text-purple-600" /> {expFormatted}
+                      </span>
+                      <span className="flex items-center gap-1 font-bold text-emerald-700">
+                        <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> {salFormatted}
                       </span>
                     </div>
                   </div>
@@ -481,7 +554,7 @@ function RecruiterJobManagement() {
       {/* CREATE & EDIT JOB MODAL */}
       {activeModal && (
         <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="saas-card p-6 border border-slate-200 w-full max-w-2xl bg-white space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto rounded-2xl animate-scale-up">
+          <div className="saas-card p-6 border border-slate-200 w-full max-w-2xl bg-white space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto rounded-2xl animate-scale-up">
             <div className="flex justify-between items-center border-b border-slate-100 pb-3">
               <h3 className="text-base font-extrabold font-outfit text-slate-900">
                 {activeModal === 'create' ? 'Create New Job Requisition' : 'Edit Job Requisition'}
@@ -492,9 +565,14 @@ function RecruiterJobManagement() {
             </div>
 
             <form onSubmit={handleFormSubmit} className="space-y-4 text-xs font-medium">
+              {/* Job Information Header */}
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-1">
+                Job Information
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Job Title</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Job Title *</label>
                   <input
                     type="text"
                     required
@@ -506,7 +584,7 @@ function RecruiterJobManagement() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Department</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Department *</label>
                   <input
                     type="text"
                     required
@@ -520,11 +598,11 @@ function RecruiterJobManagement() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Location</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Location *</label>
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Remote / Hybrid"
+                    placeholder="e.g. Chennai, Remote / Hybrid"
                     value={formData.location}
                     onChange={(e) => setFormData({ ...formData, location: e.target.value })}
                     className="input-saas w-full bg-white"
@@ -532,7 +610,7 @@ function RecruiterJobManagement() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Employment Type</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Employment Type</label>
                   <select
                     value={formData.employmentType}
                     onChange={(e) => setFormData({ ...formData, employmentType: e.target.value })}
@@ -545,7 +623,7 @@ function RecruiterJobManagement() {
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Status</label>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Status</label>
                   <select
                     value={formData.status}
                     onChange={(e) => setFormData({ ...formData, status: e.target.value })}
@@ -558,8 +636,130 @@ function RecruiterJobManagement() {
                 </div>
               </div>
 
+              {/* Experience Required Section */}
+              <div className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="w-3.5 h-3.5 text-indigo-600" /> Experience Required
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-semibold font-mono">
+                    Preview: {formatExperience({ min: Number(formData.expMin), max: Number(formData.expMax), unit: formData.expUnit })}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Minimum Experience</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      required
+                      placeholder="e.g. 2"
+                      value={formData.expMin}
+                      onChange={(e) => setFormData({ ...formData, expMin: e.target.value })}
+                      className="input-saas w-full bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Maximum Experience</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      required
+                      placeholder="e.g. 5"
+                      value={formData.expMax}
+                      onChange={(e) => setFormData({ ...formData, expMax: e.target.value })}
+                      className="input-saas w-full bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Experience Unit</label>
+                    <select
+                      value={formData.expUnit}
+                      onChange={(e) => setFormData({ ...formData, expUnit: e.target.value })}
+                      className="input-saas w-full bg-white font-semibold text-slate-800 cursor-pointer"
+                    >
+                      <option value="years">Years</option>
+                      <option value="months">Months</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Salary Section */}
+              <div className="p-3.5 rounded-xl bg-emerald-50/40 border border-emerald-200/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <DollarSign className="w-3.5 h-3.5 text-emerald-600" /> Salary Compensation
+                  </span>
+                  <span className="text-[10px] text-emerald-800 font-bold font-mono">
+                    Preview: {formatSalary({ min: Number(formData.salMin), max: Number(formData.salMax), currency: formData.salCurrency, period: formData.salPeriod })}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Minimum Salary</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="10000"
+                      required
+                      placeholder="e.g. 400000"
+                      value={formData.salMin}
+                      onChange={(e) => setFormData({ ...formData, salMin: e.target.value })}
+                      className="input-saas w-full bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Maximum Salary</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="10000"
+                      required
+                      placeholder="e.g. 800000"
+                      value={formData.salMax}
+                      onChange={(e) => setFormData({ ...formData, salMax: e.target.value })}
+                      className="input-saas w-full bg-white"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Currency</label>
+                    <select
+                      value={formData.salCurrency}
+                      onChange={(e) => setFormData({ ...formData, salCurrency: e.target.value })}
+                      className="input-saas w-full bg-white font-semibold text-slate-800 cursor-pointer"
+                    >
+                      <option value="INR">INR (₹)</option>
+                      <option value="USD">USD ($)</option>
+                      <option value="EUR">EUR (€)</option>
+                      <option value="GBP">GBP (£)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Salary Period</label>
+                    <select
+                      value={formData.salPeriod}
+                      onChange={(e) => setFormData({ ...formData, salPeriod: e.target.value })}
+                      className="input-saas w-full bg-white font-semibold text-slate-800 cursor-pointer"
+                    >
+                      <option value="year">Yearly (LPA)</option>
+                      <option value="month">Monthly</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Required Skills (Comma separated)</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Required Skills (Comma separated)</label>
                 <input
                   type="text"
                   required
@@ -571,7 +771,7 @@ function RecruiterJobManagement() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Preferred Skills (Comma separated)</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Preferred Skills (Comma separated)</label>
                 <input
                   type="text"
                   placeholder="Docker, AWS, Express"
@@ -582,9 +782,9 @@ function RecruiterJobManagement() {
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Job Description</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Job Description</label>
                 <textarea
-                  rows={4}
+                  rows={3}
                   required
                   placeholder="Detailed description of role responsibilities and requirements..."
                   value={formData.description}
@@ -594,10 +794,10 @@ function RecruiterJobManagement() {
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
-                <button type="button" onClick={() => setActiveModal(null)} className="btn-secondary text-xs px-4 py-2">
+                <button type="button" onClick={() => setActiveModal(null)} className="btn-secondary text-xs px-4 py-2 cursor-pointer">
                   Cancel
                 </button>
-                <button type="submit" className="btn-primary text-xs font-bold px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white">
+                <button type="submit" className="btn-primary text-xs font-bold px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer">
                   {activeModal === 'create' ? 'Continue to Confirmation' : 'Save Changes'}
                 </button>
               </div>
@@ -606,10 +806,10 @@ function RecruiterJobManagement() {
         </div>
       )}
 
-      {/* CONFIRMATION ACTION MODAL */}
+      {/* CONFIRMATION ACTION MODAL WITH STRUCTURED SUMMARY */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="saas-card p-6 bg-white border border-slate-200 max-w-sm w-full rounded-2xl shadow-xl space-y-4 animate-scale-up">
+          <div className="saas-card p-6 bg-white border border-slate-200 max-w-md w-full rounded-2xl shadow-xl space-y-4 animate-scale-up">
             <div className="flex items-center gap-3">
               <div
                 className={`p-2.5 rounded-xl ${
@@ -625,6 +825,28 @@ function RecruiterJobManagement() {
 
             <p className="text-xs text-slate-600 leading-relaxed font-medium">{confirmModal.message}</p>
 
+            {/* Structured Summary for Job Creation & Editing */}
+            {confirmModal.formattedDetails && (
+              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/90 space-y-2 text-xs">
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                  <span className="text-slate-400 font-medium">Job Title:</span>
+                  <span className="font-extrabold text-slate-900 font-outfit">{confirmModal.formattedDetails.title}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                  <span className="text-slate-400 font-medium">Experience:</span>
+                  <span className="font-bold text-indigo-700">{confirmModal.formattedDetails.experience}</span>
+                </div>
+                <div className="flex justify-between border-b border-slate-200/60 pb-1.5">
+                  <span className="text-slate-400 font-medium">Salary:</span>
+                  <span className="font-bold text-emerald-700">{confirmModal.formattedDetails.salary}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-400 font-medium">Location:</span>
+                  <span className="font-semibold text-slate-800">{confirmModal.formattedDetails.location}</span>
+                </div>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-slate-100 flex justify-end gap-2.5">
               <button
                 onClick={() =>
@@ -635,18 +857,19 @@ function RecruiterJobManagement() {
                     actionType: null,
                     pendingPayload: null,
                     targetJob: null,
+                    formattedDetails: null,
                     submitting: false
                   })
                 }
                 disabled={confirmModal.submitting}
-                className="btn-secondary text-xs px-3.5 py-1.5"
+                className="btn-secondary text-xs px-3.5 py-1.5 cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmAction}
                 disabled={confirmModal.submitting}
-                className={`text-xs px-4 py-1.5 rounded-xl font-bold text-white shadow-xs flex items-center gap-1.5 ${
+                className={`text-xs px-4 py-1.5 rounded-xl font-bold text-white shadow-xs flex items-center gap-1.5 cursor-pointer ${
                   confirmModal.actionType === 'delete' || confirmModal.actionType === 'close'
                     ? 'bg-rose-600 hover:bg-rose-700'
                     : 'bg-indigo-600 hover:bg-indigo-700'

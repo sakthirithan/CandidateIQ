@@ -4,6 +4,7 @@ const {
   createJob,
   getJobs,
   getRecruiterJobs,
+  getCandidateApplications,
   getJobById,
   updateJob,
   deleteJob,
@@ -15,6 +16,7 @@ const {
 const { protect, authorize } = require('../middleware/authMiddleware');
 
 router.get('/', getJobs);
+router.get('/candidate/my-applications', protect, authorize('candidate'), getCandidateApplications);
 router.get('/recruiter/my-jobs', protect, authorize('hr', 'recruiter', 'admin'), getRecruiterJobs);
 router.get('/recruiter/applications', protect, authorize('hr', 'recruiter', 'admin'), getRecruiterApplications);
 router.get('/:id', getJobById);

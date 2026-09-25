@@ -6,6 +6,8 @@ import { mockTrackerService } from '../../services/mockApi/trackerService';
 import { mockCandidateService } from '../../services/mockApi/candidateService';
 import { matchingService } from '../../services/mockApi/matchingService';
 import { getCurrentUser } from '../../utils/auth';
+import { formatExperience, formatSalary } from '../../utils/formatters';
+import ApplicationModal from './ApplicationModal';
 import {
   ArrowLeft, Briefcase, MapPin, DollarSign, Calendar, Clock, CheckCircle2, Zap,
   Bookmark, BookmarkCheck, Share2, Building, Sparkles, AlertCircle, FileText, Check, Copy, UserCheck
@@ -18,14 +20,12 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
   const [job, setJob] = useState(null);
   const [loading, setLoading] = useState(true);
   const [application, setApplication] = useState(null);
-  const [applying, setApplying] = useState(false);
   const [matchResult, setMatchResult] = useState(null);
   const [toastMsg, setToastMsg] = useState(null);
+  const [showApplyModal, setShowApplyModal] = useState(false);
 
   const isTracked = Boolean(application);
   const trackingStatus = application?.status || 'Applied';
-
-  const [showIncompleteModal, setShowIncompleteModal] = useState(false);
 
   useEffect(() => {
     fetchJobDetails();
@@ -38,11 +38,11 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
       const targetJob = allJobs.find((j) => (j.id || j._id) === effectiveJobId) || allJobs[0];
       setJob(targetJob);
 
-      // Fetch candidate-specific application status
+      // Fetch candidate-specific application status from database
       const currentUser = getCurrentUser();
-      const candidateId = currentUser?.id || 'cand_1';
+      const candidateId = currentUser?.id || currentUser?._id || 'cand_1';
       const userApps = await mockApplicationService.getApplicationsForCandidate(candidateId);
-      const userApp = userApps.find((a) => (a.jobId === targetJob.id || a.jobId === targetJob._id || String(a.jobId) === String(targetJob.id)));
+      const userApp = userApps.find((a) => (a.jobId === targetJob.id || a.jobId === targetJob._id || String(a.jobId) === String(targetJob.id) || (a.job && String(a.job._id || a.job) === String(targetJob.id || targetJob._id))));
       setApplication(userApp || null);
 
       // Calculate initial match score if candidate available
@@ -53,59 +53,27 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
       }
     } catch (err) {
       console.error('Error loading job details:', err);
-    } finally {
+    } fontally: {
       setLoading(false);
     }
   };
 
   const showToast = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 3000);
+    setTimeout(() => setToastMsg(null), 4000);
   };
 
-  const handleApply = async (bypassProfileCheck = false) => {
-    if (!job || application) return;
-    const currentUser = getCurrentUser();
-    const candidateId = currentUser?.id || 'cand_1';
-    const candidate = await mockCandidateService.getCandidateById(candidateId);
-
-    // Profile Completeness check
-    const hasSkills = candidate?.skills && candidate.skills.length > 0;
-    const hasEdu = candidate?.education && candidate.education.length > 0;
-    if (!bypassProfileCheck && (!hasSkills || !hasEdu)) {
-      setShowIncompleteModal(true);
+  const handleOpenApplyModal = () => {
+    if (application) {
+      showToast('You have already applied for this job position.');
       return;
     }
+    setShowApplyModal(true);
+  };
 
-    try {
-      setApplying(true);
-      const calculatedMatch = matchingService.calculateMatch(candidate, job);
-
-      const newApp = await mockApplicationService.applyForJob({
-        jobId: job.id || job._id,
-        jobTitle: job.title,
-        company: job.company || 'CandidateIQ Enterprise',
-        candidateId,
-        candidateName: currentUser?.name || 'Alex Johnson',
-        candidateEmail: currentUser?.email || 'alex@example.com',
-        matchPercentage: calculatedMatch.overallMatch,
-        iqScore: 88
-      });
-
-      setApplication(newApp);
-      setMatchResult(calculatedMatch);
-      setShowIncompleteModal(false);
-      showToast(`Application submitted! This job has been automatically added to your Tracker.`);
-    } catch (err) {
-      console.error(err);
-      if (err.code === 'ALREADY_APPLIED') {
-        showToast('You have already applied for this job position.');
-      } else {
-        showToast('Failed to submit application. Please try again.');
-      }
-    } finally {
-      setApplying(false);
-    }
+  const handleApplicationSuccess = (createdApp) => {
+    setApplication(createdApp);
+    showToast('Application submitted successfully! Your application is now visible to the recruiter.');
   };
 
   const handleShare = () => {
@@ -222,7 +190,7 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
               <div className="flex flex-wrap gap-4 text-xs text-slate-500 pt-1 font-medium">
                 <span className="flex items-center gap-1.5"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {job.location}</span>
                 <span className="flex items-center gap-1.5"><Briefcase className="w-3.5 h-3.5 text-slate-400" /> {job.type || 'Full-Time'}</span>
-                <span className="flex items-center gap-1.5"><DollarSign className="w-3.5 h-3.5 text-slate-400" /> {job.salary || '$140k - $170k'}</span>
+                <span className="flex items-center gap-1.5 font-bold text-emerald-700"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> {formatSalary(job.salary, job.salary)}</span>
                 <span className="flex items-center gap-1.5"><Calendar className="w-3.5 h-3.5 text-slate-400" /> Posted: {job.postedDate || 'Recent'}</span>
               </div>
             </div>
@@ -250,17 +218,15 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
             </button>
 
             <button
-              onClick={handleApply}
-              disabled={applying || Boolean(application)}
+              onClick={handleOpenApplyModal}
+              disabled={Boolean(application)}
               className={`px-6 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer ${
                 application
                   ? 'bg-slate-100 text-slate-500 border border-slate-200 cursor-not-allowed'
-                  : 'btn-primary'
+                  : 'btn-primary bg-indigo-600 hover:bg-indigo-700 text-white'
               }`}
             >
-              {applying ? (
-                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
-              ) : application ? (
+              {application ? (
                 <>
                   <CheckCircle2 className="w-4 h-4 text-emerald-600" /> Applied
                 </>
@@ -277,11 +243,11 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Experience Required</span>
-            <span className="font-extrabold text-slate-900 font-outfit text-sm">{job.experience || '3+ Years'}</span>
+            <span className="font-extrabold text-slate-900 font-outfit text-sm">{formatExperience(job.experience, job.experienceLevel)}</span>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Offered Compensation</span>
-            <span className="font-extrabold text-emerald-600 font-outfit text-sm">{job.salary || '$140k - $170k'}</span>
+            <span className="font-extrabold text-emerald-600 font-outfit text-sm">{formatSalary(job.salary, job.salary)}</span>
           </div>
           <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Department</span>
@@ -444,44 +410,13 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
         </div>
       </div>
 
-      {/* Incomplete Profile Prompt Modal */}
-      {showIncompleteModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-          <div className="saas-card bg-white w-full max-w-md p-6 space-y-4 border border-slate-200 shadow-2xl rounded-2xl">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
-                <AlertCircle className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold font-outfit text-slate-950">Complete Your Profile</h3>
-                <p className="text-xs text-slate-500 font-medium">Profile information is required before applying</p>
-              </div>
-            </div>
-
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Your profile is currently missing key skills or education details. Complete your resume profile before applying to improve your application quality and AI compatibility match score.
-            </p>
-
-            <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
-              <button
-                onClick={() => handleApply(true)}
-                className="btn-secondary text-xs px-4 py-2 font-bold"
-              >
-                Apply Anyway
-              </button>
-              <button
-                onClick={() => {
-                  setShowIncompleteModal(false);
-                  if (onNavigate) onNavigate('profile');
-                }}
-                className="btn-primary text-xs px-4 py-2 font-bold"
-              >
-                Complete Profile
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Unstop Style Application Dialog */}
+      <ApplicationModal
+        job={job}
+        isOpen={showApplyModal}
+        onClose={() => setShowApplyModal(false)}
+        onSuccess={handleApplicationSuccess}
+      />
     </div>
   );
 }

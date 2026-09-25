@@ -8,13 +8,62 @@ const aiService = require('../services/aiService');
 // @access  Private (Recruiter/Admin)
 const createJob = async (req, res, next) => {
   try {
-    const { title, department, description, requiredSkills, preferredSkills, experienceLevel, education, location, employmentType, status } = req.body;
+    const {
+      title, department, description, requiredSkills, preferredSkills,
+      experienceLevel, education, location, employmentType, status,
+      experience, salary
+    } = req.body;
 
     if (!title || !description || !requiredSkills || (Array.isArray(requiredSkills) && requiredSkills.length === 0)) {
       return res.status(400).json({ success: false, message: 'Please provide job title, description, and required skills.' });
     }
 
+    // Backend Validation for Experience
+    if (experience && typeof experience === 'object') {
+      const minExp = Number(experience.min);
+      const maxExp = Number(experience.max);
+      if (isNaN(minExp) || minExp < 0) {
+        return res.status(400).json({ success: false, message: 'Minimum experience must be a non-negative number.' });
+      }
+      if (isNaN(maxExp) || maxExp < minExp) {
+        return res.status(400).json({ success: false, message: 'Maximum experience must be greater than or equal to minimum experience.' });
+      }
+    }
+
+    // Backend Validation for Salary
+    if (salary && typeof salary === 'object') {
+      const minSal = Number(salary.min);
+      const maxSal = Number(salary.max);
+      if (isNaN(minSal) || minSal < 0) {
+        return res.status(400).json({ success: false, message: 'Minimum salary must be a non-negative number.' });
+      }
+      if (isNaN(maxSal) || maxSal < minSal) {
+        return res.status(400).json({ success: false, message: 'Maximum salary must be greater than or equal to minimum salary.' });
+      }
+    }
+
     const userId = req.user.id || req.user._id;
+
+    const expObj = experience ? {
+      min: Number(experience.min) || 0,
+      max: Number(experience.max) || 0,
+      unit: experience.unit || 'years'
+    } : undefined;
+
+    const salObj = salary ? {
+      min: Number(salary.min) || 0,
+      max: Number(salary.max) || 0,
+      currency: salary.currency || 'INR',
+      period: salary.period || 'year'
+    } : undefined;
+
+    // Derived legacy string fallbacks for display compatibility
+    let formattedExp = experienceLevel || '1-3 Years';
+    if (expObj) {
+      formattedExp = expObj.min === expObj.max
+        ? `${expObj.min} ${expObj.unit || 'Years'}`
+        : `${expObj.min}–${expObj.max} ${expObj.unit ? (expObj.unit.charAt(0).toUpperCase() + expObj.unit.slice(1)) : 'Years'}`;
+    }
 
     const job = await Job.create({
       title: title.trim(),
@@ -22,7 +71,9 @@ const createJob = async (req, res, next) => {
       description: description.trim(),
       requiredSkills: Array.isArray(requiredSkills) ? requiredSkills : requiredSkills.split(',').map(s => s.trim()),
       preferredSkills: Array.isArray(preferredSkills) ? preferredSkills : (preferredSkills ? preferredSkills.split(',').map(s => s.trim()) : []),
-      experienceLevel: experienceLevel || '1-3 Years',
+      experienceLevel: formattedExp,
+      experience: expObj,
+      salary: salObj,
       education: education || "Bachelor's Degree",
       location: location || 'Remote',
       employmentType: employmentType || 'Full-time',
@@ -124,14 +175,56 @@ const updateJob = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Forbidden. You are not authorized to update this job.' });
     }
 
-    const { title, department, description, requiredSkills, preferredSkills, experienceLevel, education, location, employmentType, status } = req.body;
+    const {
+      title, department, description, requiredSkills, preferredSkills,
+      experienceLevel, education, location, employmentType, status,
+      experience, salary
+    } = req.body;
+
+    // Backend Validation for Experience
+    if (experience && typeof experience === 'object') {
+      const minExp = Number(experience.min);
+      const maxExp = Number(experience.max);
+      if (isNaN(minExp) || minExp < 0) {
+        return res.status(400).json({ success: false, message: 'Minimum experience must be a non-negative number.' });
+      }
+      if (isNaN(maxExp) || maxExp < minExp) {
+        return res.status(400).json({ success: false, message: 'Maximum experience must be greater than or equal to minimum experience.' });
+      }
+      job.experience = {
+        min: minExp,
+        max: maxExp,
+        unit: experience.unit || job.experience?.unit || 'years'
+      };
+      job.experienceLevel = minExp === maxExp
+        ? `${minExp} ${job.experience.unit}`
+        : `${minExp}–${maxExp} ${job.experience.unit ? (job.experience.unit.charAt(0).toUpperCase() + job.experience.unit.slice(1)) : 'Years'}`;
+    }
+
+    // Backend Validation for Salary
+    if (salary && typeof salary === 'object') {
+      const minSal = Number(salary.min);
+      const maxSal = Number(salary.max);
+      if (isNaN(minSal) || minSal < 0) {
+        return res.status(400).json({ success: false, message: 'Minimum salary must be a non-negative number.' });
+      }
+      if (isNaN(maxSal) || maxSal < minSal) {
+        return res.status(400).json({ success: false, message: 'Maximum salary must be greater than or equal to minimum salary.' });
+      }
+      job.salary = {
+        min: minSal,
+        max: maxSal,
+        currency: salary.currency || job.salary?.currency || 'INR',
+        period: salary.period || job.salary?.period || 'year'
+      };
+    }
 
     if (title) job.title = title.trim();
     if (department) job.department = department.trim();
     if (description) job.description = description.trim();
     if (requiredSkills) job.requiredSkills = Array.isArray(requiredSkills) ? requiredSkills : requiredSkills.split(',').map(s => s.trim());
     if (preferredSkills) job.preferredSkills = Array.isArray(preferredSkills) ? preferredSkills : preferredSkills.split(',').map(s => s.trim());
-    if (experienceLevel) job.experienceLevel = experienceLevel;
+    if (experienceLevel && !experience) job.experienceLevel = experienceLevel;
     if (education) job.education = education;
     if (location) job.location = location;
     if (employmentType) job.employmentType = employmentType;
@@ -186,6 +279,7 @@ const applyToJob = async (req, res, next) => {
     if (existingApp) {
       return res.status(400).json({
         success: false,
+        isApplied: true,
         message: 'You have already applied for this job position.',
         application: existingApp
       });
@@ -196,12 +290,50 @@ const applyToJob = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Target job posting not found.' });
     }
 
+    const {
+      resumeSnapshot,
+      candidateSnapshot,
+      professionalSnapshot,
+      expectedCompensation,
+      screeningAnswers,
+      termsAccepted
+    } = req.body;
+
+    if (termsAccepted === false) {
+      return res.status(400).json({ success: false, message: 'You must accept the terms and conditions to submit your application.' });
+    }
+
     const candidateProfile = await CandidateProfile.findOne({ user: userId });
+
+    // Build fallback snapshots if not explicitly provided from form
+    const finalCandidateSnapshot = candidateSnapshot && candidateSnapshot.name ? candidateSnapshot : {
+      name: req.user.name || 'Candidate',
+      email: req.user.email || 'candidate@example.com',
+      mobile: candidateProfile?.personalInfo?.phone || '',
+      location: candidateProfile?.personalInfo?.location || targetJob.location || 'Remote',
+      gender: candidateSnapshot?.gender || 'Not Specified'
+    };
+
+    const finalProfessionalSnapshot = professionalSnapshot || {
+      userType: 'Professional',
+      designation: candidateProfile?.experience?.[0]?.position || 'Software Developer',
+      experience: candidateProfile?.experience?.[0]?.duration || '2 Years',
+      organization: candidateProfile?.experience?.[0]?.company || 'Tech Partner',
+      skills: candidateProfile?.skills?.technical || ['JavaScript', 'React', 'Node.js']
+    };
+
+    const finalResumeSnapshot = resumeSnapshot || {
+      resumeId: candidateProfile?._id?.toString() || `res_${Date.now()}`,
+      fileName: 'Candidate_Resume.pdf',
+      fileUrl: '',
+      capturedAt: new Date()
+    };
+
     const profileToMatch = candidateProfile?.skills ? candidateProfile : {
-      personalInfo: { name: req.user.name, email: req.user.email },
-      skills: { technical: ['React', 'Node.js', 'JavaScript', 'MongoDB'], frameworks: ['Express'], databases: ['MongoDB'], tools: ['Git'] },
-      experience: [{ company: 'Tech Projects', position: 'Developer', duration: '1 Year' }],
-      education: [{ degree: 'B.Tech CS', institution: 'Engineering College', year: '2024' }]
+      personalInfo: { name: finalCandidateSnapshot.name, email: finalCandidateSnapshot.email },
+      skills: { technical: finalProfessionalSnapshot.skills || ['React', 'Node.js', 'JavaScript', 'MongoDB'] },
+      experience: [{ company: finalProfessionalSnapshot.organization || 'Tech Partner', position: finalProfessionalSnapshot.designation || 'Developer', duration: finalProfessionalSnapshot.experience || '2 Years' }],
+      education: [{ degree: "Bachelor's Degree", institution: 'Engineering College', year: '2024' }]
     };
 
     // Run AI Matching Engine
@@ -212,16 +344,53 @@ const applyToJob = async (req, res, next) => {
       jobIdString: targetJob._id.toString(),
       candidate: userId,
       candidateIdString: userId.toString(),
+      recruiter: targetJob.recruiter,
       candidateProfile: candidateProfile?._id || null,
+      resumeSnapshot: finalResumeSnapshot,
+      candidateSnapshot: finalCandidateSnapshot,
+      professionalSnapshot: finalProfessionalSnapshot,
+      expectedCompensation: expectedCompensation || { amount: 0, currency: 'INR', period: 'year', formatted: 'Not specified' },
+      screeningAnswers: Array.isArray(screeningAnswers) ? screeningAnswers : [],
+      termsAccepted: true,
       status: 'applied',
       matchAnalysis,
       overallScore: matchAnalysis.overallMatch || 80
     });
 
+    const populatedApp = await Application.findById(application._id).populate('job', 'title company department location salary experience status');
+
     return res.status(201).json({
       success: true,
       message: 'Application submitted successfully. Candidate-Job matching analysis computed.',
-      application
+      application: populatedApp
+    });
+  } catch (error) {
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        isApplied: true,
+        message: 'You have already applied for this job position.'
+      });
+    }
+    next(error);
+  }
+};
+
+// @desc    Get candidate's own submitted applications
+// @route   GET /api/jobs/candidate/my-applications
+// @access  Private (Candidate)
+const getCandidateApplications = async (req, res, next) => {
+  try {
+    const candidateId = req.user.id || req.user._id;
+
+    const applications = await Application.find({ candidate: candidateId })
+      .populate('job', 'title company department location salary experience status recruiter')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: applications.length,
+      applications
     });
   } catch (error) {
     next(error);
@@ -238,6 +407,7 @@ const getJobApplicants = async (req, res, next) => {
     const applicants = await Application.find({ $or: [{ job: id }, { jobIdString: id }] })
       .populate('candidate', 'name email role')
       .populate('candidateProfile')
+      .populate('job', 'title company department location salary experience status')
       .sort({ overallScore: -1 });
 
     return res.status(200).json({ success: true, count: applicants.length, applicants });
@@ -314,6 +484,7 @@ module.exports = {
   createJob,
   getJobs,
   getRecruiterJobs,
+  getCandidateApplications,
   getJobById,
   updateJob,
   deleteJob,

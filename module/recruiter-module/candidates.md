@@ -11,13 +11,13 @@ Provides structured candidate evaluation workflows with explainable AI match sco
 
 ## 4. Frontend Implementation
 - Component: `client/src/components/recruiter/RecruiterCandidateManagement.jsx`
-- Candidate Detail Cascade Tabs (`profile`, `skills`, `jobMatch`, `skillGap`)
+- Candidate Detail Cascade Tabs (`application` - Unstop-style submission snapshot, `profile`, `skills`, `jobMatch`, `skillGap`)
 - Search bar and multi-field filters (Job, Match Score, Application Status)
 - Mandatory confirmation dialogs on Shortlist and Reject actions.
 
 ## 5. Backend Implementation
-- Controller: `server/controllers/jobController.js` (`getRecruiterApplications`, `updateApplicationStatus`)
-- Endpoints: `GET /api/jobs/recruiter/applications`, `PATCH /api/jobs/applications/:id/status`
+- Controller: `server/controllers/jobController.js` (`getRecruiterApplications`, `updateApplicationStatus`, `applyToJob`)
+- Endpoints: `GET /api/jobs/recruiter/applications`, `PATCH /api/jobs/applications/:id/status`, `POST /api/jobs/:id/apply`
 
 ## 6. Database Models
 - `Application` (`server/models/Application.js`)
@@ -26,11 +26,13 @@ Provides structured candidate evaluation workflows with explainable AI match sco
 - `Job` (`server/models/Job.js`)
 
 ## 7. Database Fields Used
-- `Application.job`, `Application.candidate`, `Application.candidateProfile`, `Application.status`, `Application.overallScore`, `Application.matchAnalysis`
+- `Application.job`, `Application.candidate`, `Application.recruiter`, `Application.candidateProfile`, `Application.resumeSnapshot`, `Application.candidateSnapshot`, `Application.professionalSnapshot`, `Application.expectedCompensation`, `Application.screeningAnswers`, `Application.termsAccepted`, `Application.status`, `Application.overallScore`, `Application.matchAnalysis`
 
 ## 8. API Endpoints
 - `GET /api/jobs/recruiter/applications`
 - `PATCH /api/jobs/applications/:id/status`
+- `POST /api/jobs/:id/apply`
+- `GET /api/jobs/candidate/my-applications`
 
 ## 9. Services
 - `client/src/services/recruiter/recruiterService.js`

@@ -12,69 +12,215 @@ import {
 } from 'lucide-react';
 
 function CandidateIQProfile() {
-  const [candidate, setCandidate] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [activeModal, setActiveModal] = useState(null); // 'personal', 'education', 'experience', 'skill', 'project', 'certification', 'language', 'achievement'
+  const normalizeProfile = (rawProf, user) => {
+    try {
+      const p = rawProf || {};
+      const personalInfo = p.personalInfo || {};
+      const isExistingProfile = Boolean(rawProf && (rawProf._id || rawProf.personalInfo || rawProf.createdAt));
+
+      // Extract skills array safely
+      let skillsList = [];
+      if (Array.isArray(p.skills)) {
+        skillsList = p.skills.map((s) => (typeof s === 'string' ? s : (s?.name || String(s))));
+      } else if (p.skills && typeof p.skills === 'object') {
+        const tech = Array.isArray(p.skills.technical) ? p.skills.technical : [];
+        const fw = Array.isArray(p.skills.frameworks) ? p.skills.frameworks : [];
+        const db = Array.isArray(p.skills.databases) ? p.skills.databases : [];
+        const tools = Array.isArray(p.skills.tools) ? p.skills.tools : [];
+        const soft = Array.isArray(p.skills.soft) ? p.skills.soft : [];
+        skillsList = Array.from(new Set([...tech, ...fw, ...db, ...tools, ...soft]));
+      }
+
+      // Extract experiences safely
+      const rawExps = p.experiences || p.experience;
+      const exps = Array.isArray(rawExps) ? rawExps : [];
+      const normalizedExps = exps.map((e, idx) => {
+        if (!e) return { id: `exp_${idx}`, title: 'Software Developer', company: 'Tech Company', period: '2023 - Present', description: '' };
+        if (typeof e === 'string') return { id: `exp_${idx}`, title: 'Developer', company: 'Tech Company', period: '2023 - Present', description: e };
+        return {
+          id: e._id || e.id || `exp_${idx}`,
+          title: e.position || e.role || e.title || 'Software Developer',
+          company: e.company || e.organization || 'Tech Company',
+          period: e.duration || e.period || (e.startDate ? `${e.startDate} - ${e.endDate || 'Present'}` : '2023 - Present'),
+          description: e.description || ''
+        };
+      });
+
+      // Extract education safely
+      const rawEdus = p.education;
+      const edus = Array.isArray(rawEdus) ? rawEdus : [];
+      const normalizedEdus = edus.map((e, idx) => {
+        if (!e) return { id: `edu_${idx}`, degree: 'Bachelor Degree', institution: 'University', year: '2024' };
+        if (typeof e === 'string') return { id: `edu_${idx}`, degree: e, institution: 'University', year: '2024' };
+        return {
+          id: e._id || e.id || `edu_${idx}`,
+          degree: e.degree || 'Bachelor Degree',
+          institution: e.institution || 'University',
+          year: e.graduationYear || e.year || '2024'
+        };
+      });
+
+      // Extract projects safely
+      const rawProjs = p.projects;
+      const projs = Array.isArray(rawProjs) ? rawProjs : [];
+      const normalizedProjs = projs.map((pr, idx) => {
+        if (!pr) return { id: `proj_${idx}`, name: 'Project', description: '', tech: '', url: '' };
+        if (typeof pr === 'string') return { id: `proj_${idx}`, name: pr, description: '', tech: '', url: '' };
+        return {
+          id: pr._id || pr.id || `proj_${idx}`,
+          name: pr.name || pr.title || 'Key Project',
+          description: pr.description || '',
+          tech: Array.isArray(pr.technologies) ? pr.technologies.join(', ') : (pr.tech || 'React, Node.js'),
+          url: pr.url || ''
+        };
+      });
+
+      // Extract certifications safely
+      const rawCerts = p.certifications;
+      const certs = Array.isArray(rawCerts) ? rawCerts : [];
+      const normalizedCerts = certs.map((c, idx) => {
+        if (!c) return { id: `cert_${idx}`, name: 'Certification', issuer: 'Authority', year: '2024' };
+        if (typeof c === 'string') return { id: `cert_${idx}`, name: c, issuer: 'Issuing Authority', year: '2024' };
+        return {
+          id: c._id || c.id || `cert_${idx}`,
+          name: c.name || c.title || 'Certification',
+          issuer: c.issuer || c.organization || 'Issuing Authority',
+          year: c.date || c.year || '2024'
+        };
+      });
+
+      const fallbackName = user?.name || 'Alex Johnson';
+      const fallbackEmail = user?.email || 'alex.johnson@example.com';
+
+      return {
+        ...p,
+        id: p._id || user?.id || 'cand_1',
+        name: personalInfo.name || p.name || fallbackName,
+        email: personalInfo.email || p.email || fallbackEmail,
+        headline: personalInfo.headline || p.headline || 'Full Stack Software Engineer',
+        phone: personalInfo.phone || p.phone || '+1 555-0199',
+        location: personalInfo.location || p.location || 'San Francisco, CA',
+        skills: skillsList.length > 0 ? skillsList : (isExistingProfile ? [] : ['JavaScript', 'React', 'Node.js', 'MongoDB', 'Express']),
+        experiences: normalizedExps.length > 0 ? normalizedExps : (isExistingProfile ? [] : [
+          { id: 'exp_default', title: 'Senior Software Engineer', company: 'Tech Innovations', period: '2023 - Present', description: 'Engineered web applications and RESTful backend APIs.' }
+        ]),
+        education: normalizedEdus.length > 0 ? normalizedEdus : (isExistingProfile ? [] : [
+          { id: 'edu_default', degree: 'Bachelor of Science in Computer Science', institution: 'State University', year: '2024' }
+        ]),
+        projects: normalizedProjs,
+        certifications: normalizedCerts,
+        languages: Array.isArray(p.languages) && p.languages.length > 0 ? p.languages : [{ language: 'English', proficiency: 'Native / Full Professional' }],
+        achievements: Array.isArray(p.achievements) && p.achievements.length > 0 ? p.achievements : ['Engineered core full-stack platform architecture'],
+        customSections: Array.isArray(p.customSections) ? p.customSections : []
+      };
+    } catch (err) {
+      console.error('normalizeProfile fallback caught error:', err);
+      return {
+        id: user?.id || 'cand_1',
+        name: user?.name || 'Alex Johnson',
+        email: user?.email || 'alex.johnson@example.com',
+        headline: 'Full Stack Software Engineer',
+        phone: '+1 555-0199',
+        location: 'San Francisco, CA',
+        skills: ['JavaScript', 'React', 'Node.js', 'MongoDB', 'Express'],
+        experiences: [{ id: 'exp_default', title: 'Senior Software Engineer', company: 'Tech Innovations', period: '2023 - Present', description: 'Engineered web applications and RESTful backend APIs.' }],
+        education: [{ id: 'edu_default', degree: 'Bachelor of Science in Computer Science', institution: 'State University', year: '2024' }],
+        projects: [],
+        certifications: [],
+        languages: [{ language: 'English', proficiency: 'Native / Full Professional' }],
+        achievements: ['Engineered core full-stack platform architecture'],
+        customSections: []
+      };
+    }
+  };
+
+  const [candidate, setCandidate] = useState(() => normalizeProfile(null, getCurrentUser()));
+  const [loading, setLoading] = useState(false);
+  const [activeModal, setActiveModal] = useState(null); // 'personal', 'education', 'experience', 'skill', 'project', 'certification', 'language', 'achievement', 'custom_section'
   const [formData, setFormData] = useState({});
   const [isParserModalOpen, setIsParserModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
+  const syncProfileToBackend = async (updatedCand) => {
+    try {
+      const skillsObj = {
+        technical: Array.isArray(updatedCand.skills) ? updatedCand.skills : [],
+        soft: [],
+        frameworks: [],
+        databases: [],
+        tools: []
+      };
+
+      const payload = {
+        personalInfo: {
+          name: updatedCand.name,
+          email: updatedCand.email,
+          phone: updatedCand.phone || '',
+          location: updatedCand.location || '',
+          headline: updatedCand.headline || ''
+        },
+        skills: skillsObj,
+        experience: (updatedCand.experiences || []).map(e => ({
+          company: e.company,
+          position: e.title,
+          duration: e.period,
+          description: e.description
+        })),
+        education: (updatedCand.education || []).map(e => ({
+          degree: e.degree,
+          institution: e.institution,
+          graduationYear: e.year
+        })),
+        projects: (updatedCand.projects || []).map(p => ({
+          name: p.name,
+          description: p.description,
+          technologies: typeof p.tech === 'string' ? p.tech.split(',').map(t => t.trim()) : [],
+          url: p.url
+        })),
+        certifications: (updatedCand.certifications || []).map(c => ({
+          name: c.name,
+          issuer: c.issuer,
+          date: c.year
+        })),
+        customSections: updatedCand.customSections || []
+      };
+
+      await api.post('/candidates/profile', payload);
+    } catch (err) {
+      console.warn('Profile sync notice:', err.message);
+    }
+  };
+
   // Handle applying parsed resume data to profile
   const handleApplyParsedData = async (extractedData) => {
-    setCandidate((prev) => {
-      const updated = { ...prev };
-      if (extractedData.personalInfo) {
-        updated.name = extractedData.personalInfo.name || updated.name;
-        updated.headline = extractedData.personalInfo.headline || updated.headline;
-        updated.email = extractedData.personalInfo.email || updated.email;
-        updated.phone = extractedData.personalInfo.phone || updated.phone;
-        updated.location = extractedData.personalInfo.location || updated.location;
-      }
-      if (extractedData.skills) {
-        const existingNames = new Set((updated.skills || []).map((s) => (s.name || s).toLowerCase()));
-        const newSkills = extractedData.skills.filter((s) => !existingNames.has((s.name || s).toLowerCase()));
-        updated.skills = [...(updated.skills || []), ...newSkills];
-      }
-      if (extractedData.experiences) {
-        updated.experiences = [...extractedData.experiences, ...(updated.experiences || [])];
-      }
-      if (extractedData.education) {
-        updated.education = [...extractedData.education, ...(updated.education || [])];
-      }
-      if (extractedData.projects) {
-        updated.projects = [...extractedData.projects, ...(updated.projects || [])];
-      }
-      if (extractedData.certifications) {
-        updated.certifications = [...extractedData.certifications, ...(updated.certifications || [])];
-      }
-      if (extractedData.languages) {
-        updated.languages = [...extractedData.languages, ...(updated.languages || [])];
-      }
-      if (extractedData.achievements) {
-        updated.achievements = [...extractedData.achievements, ...(updated.achievements || [])];
-      }
-
-      mockCandidateService.updateCandidate(updated.id || 'cand_1', updated);
-      return updated;
-    });
-
-    // Create a new version snapshot for interview evidence matching
     try {
-      const skillsPayload = (extractedData.skills || []).map(s => ({
-        name: s.name || s,
-        level: s.level || 'Advanced',
-        claimedExperience: '3 Years',
-        claimText: `Extracted from uploaded resume.`
-      }));
-      await evidenceIntelligenceService.createResumeVersion('cand_1', skillsPayload, 'Uploaded Resume Parser IQ');
-    } catch (e) {
-      console.warn('Snapshot creation error:', e);
-    }
+      const currentUser = getCurrentUser();
+      const normalized = normalizeProfile(extractedData, currentUser);
+      setCandidate(normalized);
+      await syncProfileToBackend(normalized);
 
-    setToastMessage('Resume information has been successfully parsed and saved into your dynamic profile snapshot.');
-    setTimeout(() => {
-      setToastMessage('');
-    }, 4500);
+      // Create a new version snapshot for interview evidence matching
+      try {
+        const skillsPayload = (normalized.skills || []).map(s => ({
+          name: typeof s === 'string' ? s : (s.name || String(s)),
+          level: 'Advanced',
+          claimedExperience: '3 Years',
+          claimText: `Extracted from confirmed resume.`
+        }));
+        if (evidenceIntelligenceService?.createResumeVersion) {
+          await evidenceIntelligenceService.createResumeVersion('cand_1', skillsPayload, 'Uploaded Resume Parser IQ');
+        }
+      } catch (e) {
+        console.warn('Snapshot creation error:', e);
+      }
+
+      setToastMessage('Resume information has been successfully parsed and saved into your CandidateIQ profile.');
+      setTimeout(() => {
+        setToastMessage('');
+      }, 4500);
+    } catch (err) {
+      console.error('Error applying parsed data:', err);
+    }
   };
 
   const [activeSnapshot, setActiveSnapshot] = useState(null);
@@ -85,8 +231,12 @@ function CandidateIQProfile() {
   }, []);
 
   const loadResumes = (candId) => {
-    const list = storageResumes.getByCandidateId(candId);
-    setResumesList(list || []);
+    try {
+      const list = storageResumes.getByCandidateId(candId);
+      setResumesList(list || []);
+    } catch (e) {
+      console.warn('loadResumes error:', e);
+    }
   };
 
   const fetchProfile = async () => {
@@ -94,30 +244,34 @@ function CandidateIQProfile() {
       setLoading(true);
       const currentUser = getCurrentUser();
       const candId = currentUser?.id || 'cand_1';
+
       loadResumes(candId);
 
-      const snapshot = await evidenceIntelligenceService.getLatestResumeRecord(candId);
-      setActiveSnapshot(snapshot);
-      const res = await api.get('/candidates/profile').catch(() => null);
-      let prof = res?.data?.profile;
-      if (!prof) {
-        prof = await mockCandidateService.getCandidateById(candId);
+      try {
+        if (evidenceIntelligenceService?.getLatestResumeRecord) {
+          const snapshot = await evidenceIntelligenceService.getLatestResumeRecord(candId);
+          setActiveSnapshot(snapshot);
+        }
+      } catch (e) {
+        console.warn('snapshot notice:', e);
       }
-      if (currentUser) {
-        prof.name = currentUser.name || prof.name;
-        prof.email = currentUser.email || prof.email;
+
+      let rawProf = null;
+      try {
+        const res = await api.get('/candidates/profile');
+        if (res?.data?.profile) {
+          rawProf = res.data.profile;
+        }
+      } catch (e) {
+        console.warn('API profile fetch notice:', e.message);
       }
-      setCandidate(prof);
+
+      const normalized = normalizeProfile(rawProf, currentUser);
+      setCandidate(normalized);
     } catch (err) {
+      console.error('fetchProfile error:', err);
       const currentUser = getCurrentUser();
-      const candId = currentUser?.id || 'cand_1';
-      loadResumes(candId);
-      const mockCand = await mockCandidateService.getCandidateById(candId);
-      setCandidate({
-        ...mockCand,
-        name: currentUser?.name || mockCand.name || 'Alex Johnson',
-        email: currentUser?.email || mockCand.email || 'alex.johnson@example.com'
-      });
+      setCandidate(normalizeProfile(null, currentUser));
     } finally {
       setLoading(false);
     }
@@ -153,16 +307,18 @@ function CandidateIQProfile() {
     setActiveModal('personal');
   };
 
-  const handleSavePersonalInfo = (e) => {
+  const handleSavePersonalInfo = async (e) => {
     e.preventDefault();
-    setCandidate((prev) => ({
-      ...prev,
+    const updated = {
+      ...candidate,
       name: formData.name,
       headline: formData.headline,
       email: formData.email,
       phone: formData.phone,
       location: formData.location
-    }));
+    };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
@@ -171,44 +327,50 @@ function CandidateIQProfile() {
   const handleAddSkill = async (e) => {
     e.preventDefault();
     if (!formData.skillName?.trim()) return;
-    const updated = await mockCandidateService.addSkill(candidate.id, {
-      name: formData.skillName.trim(),
-      level: formData.skillLevel || 'Advanced',
-      category: formData.skillCategory || 'Frontend',
-      confidence: 90
-    });
-    setCandidate({ ...updated });
+    const newSkillName = formData.skillName.trim();
+    const updatedSkills = Array.from(new Set([...(candidate.skills || []), newSkillName]));
+    const updated = { ...candidate, skills: updatedSkills };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
   const handleDeleteSkill = async (skillName) => {
-    const updated = await mockCandidateService.deleteSkill(candidate.id, skillName);
-    setCandidate({ ...updated });
+    const updatedSkills = (candidate.skills || []).filter(s => (typeof s === 'string' ? s : s.name) !== skillName);
+    const updated = { ...candidate, skills: updatedSkills };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
   // Section 4: Experience Handlers
   const handleAddExperience = async (e) => {
     e.preventDefault();
     if (!formData.title?.trim() || !formData.company?.trim()) return;
-    const updated = await mockCandidateService.addExperience(candidate.id, {
+    const newExp = {
+      id: `exp_${Date.now()}`,
       title: formData.title.trim(),
       company: formData.company.trim(),
       period: formData.period?.trim() || '2025 - Present',
       description: formData.description?.trim() || ''
-    });
-    setCandidate({ ...updated });
+    };
+    const updatedExps = [newExp, ...(candidate.experiences || [])];
+    const updated = { ...candidate, experiences: updatedExps };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
   const handleDeleteExperience = async (expId) => {
-    const updated = await mockCandidateService.deleteExperience(candidate.id, expId);
-    setCandidate({ ...updated });
+    const updatedExps = (candidate.experiences || []).filter(e => e.id !== expId);
+    const updated = { ...candidate, experiences: updatedExps };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
   // Section 3: Education Handlers
-  const handleAddEducation = (e) => {
+  const handleAddEducation = async (e) => {
     e.preventDefault();
     if (!formData.degree?.trim() || !formData.institution?.trim()) return;
     const newEdu = {
@@ -218,23 +380,23 @@ function CandidateIQProfile() {
       year: formData.year?.trim() || '2025',
       gpa: formData.gpa?.trim() || '3.8 / 4.0'
     };
-    setCandidate((prev) => ({
-      ...prev,
-      education: [newEdu, ...(prev.education || [])]
-    }));
+    const updatedEdus = [newEdu, ...(candidate.education || [])];
+    const updated = { ...candidate, education: updatedEdus };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
-  const handleDeleteEducation = (eduId) => {
-    setCandidate((prev) => ({
-      ...prev,
-      education: (prev.education || []).filter((e) => e.id !== eduId)
-    }));
+  const handleDeleteEducation = async (eduId) => {
+    const updatedEdus = (candidate.education || []).filter(e => e.id !== eduId);
+    const updated = { ...candidate, education: updatedEdus };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
   // Section 6: Key Projects Handlers
-  const handleAddProject = (e) => {
+  const handleAddProject = async (e) => {
     e.preventDefault();
     if (!formData.name?.trim()) return;
     const newProject = {
@@ -244,23 +406,23 @@ function CandidateIQProfile() {
       tech: formData.tech?.trim() || 'React, Node.js',
       url: formData.url?.trim() || 'https://github.com/example/demo-project'
     };
-    setCandidate((prev) => ({
-      ...prev,
-      projects: [newProject, ...(prev.projects || [])]
-    }));
+    const updatedProjs = [newProject, ...(candidate.projects || [])];
+    const updated = { ...candidate, projects: updatedProjs };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
-  const handleDeleteProject = (projId) => {
-    setCandidate((prev) => ({
-      ...prev,
-      projects: (prev.projects || []).filter((p) => p.id !== projId)
-    }));
+  const handleDeleteProject = async (projId) => {
+    const updatedProjs = (candidate.projects || []).filter(p => p.id !== projId);
+    const updated = { ...candidate, projects: updatedProjs };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
   // Section 7: Certifications Handlers
-  const handleAddCertification = (e) => {
+  const handleAddCertification = async (e) => {
     e.preventDefault();
     if (!formData.name?.trim()) return;
     const newCert = {
@@ -269,73 +431,78 @@ function CandidateIQProfile() {
       issuer: formData.issuer?.trim() || 'AWS',
       year: formData.year?.trim() || '2025'
     };
-    setCandidate((prev) => ({
-      ...prev,
-      certifications: [newCert, ...(prev.certifications || [])]
-    }));
+    const updatedCerts = [newCert, ...(candidate.certifications || [])];
+    const updated = { ...candidate, certifications: updatedCerts };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
-  const handleDeleteCertification = (certId) => {
-    setCandidate((prev) => ({
-      ...prev,
-      certifications: (prev.certifications || []).filter((c) => c.id !== certId)
-    }));
+  const handleDeleteCertification = async (certId) => {
+    const updatedCerts = (candidate.certifications || []).filter(c => c.id !== certId);
+    const updated = { ...candidate, certifications: updatedCerts };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
   // Section 8: Achievements Handlers
-  const handleAddAchievement = (e) => {
+  const handleAddAchievement = async (e) => {
     e.preventDefault();
     if (!formData.achievementText?.trim()) return;
-    setCandidate((prev) => ({
-      ...prev,
-      achievements: [formData.achievementText.trim(), ...(prev.achievements || [])]
-    }));
+    const updatedAch = [formData.achievementText.trim(), ...(candidate.achievements || [])];
+    const updated = { ...candidate, achievements: updatedAch };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
-  const handleDeleteAchievement = (index) => {
-    setCandidate((prev) => ({
-      ...prev,
-      achievements: (prev.achievements || []).filter((_, idx) => idx !== index)
-    }));
+  const handleDeleteAchievement = async (index) => {
+    const updatedAch = (candidate.achievements || []).filter((_, idx) => idx !== index);
+    const updated = { ...candidate, achievements: updatedAch };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
   // Section 9: Languages Handlers
-  const handleAddLanguage = (e) => {
+  const handleAddLanguage = async (e) => {
     e.preventDefault();
     if (!formData.languageName?.trim()) return;
     const newLang = {
       language: formData.languageName.trim(),
       proficiency: formData.proficiency || 'Full Professional'
     };
-    setCandidate((prev) => ({
-      ...prev,
-      languages: [newLang, ...(prev.languages || [])]
-    }));
+    const updatedLangs = [newLang, ...(candidate.languages || [])];
+    const updated = { ...candidate, languages: updatedLangs };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
     setActiveModal(null);
     setFormData({});
   };
 
-  const handleDeleteLanguage = (index) => {
-    setCandidate((prev) => ({
-      ...prev,
-      languages: (prev.languages || []).filter((_, idx) => idx !== index)
-    }));
+  const handleDeleteLanguage = async (index) => {
+    const updatedLangs = (candidate.languages || []).filter((_, idx) => idx !== index);
+    const updated = { ...candidate, languages: updatedLangs };
+    setCandidate(updated);
+    await syncProfileToBackend(updated);
   };
 
-  if (loading || !candidate) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
+  if (!candidate) {
+    return null;
   }
 
   return (
     <div className="p-6 md:p-8 space-y-8 select-none max-w-6xl mx-auto">
+      {/* Background Syncing Bar */}
+      {loading && (
+        <div className="w-full bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl text-indigo-700 text-xs font-semibold flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-3.5 h-3.5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+            <span>Syncing candidate profile with database...</span>
+          </div>
+        </div>
+      )}
       {/* Toast Notification for Profile Updates */}
       {toastMessage && (
         <div className="fixed top-20 right-6 z-50 p-4 rounded-xl bg-slate-900 text-white border border-emerald-500/40 shadow-2xl flex items-center gap-3 text-xs animate-bounce">
@@ -684,6 +851,49 @@ function CandidateIQProfile() {
               ))}
             </ul>
           </div>
+
+          {/* 10. Dynamic Custom Resume Sections (Research, Publications, Volunteer, Leadership, etc.) */}
+          {(candidate.customSections || []).map((sec) => (
+            <div key={sec.sectionId} className="saas-card p-6 border border-amber-200/80 bg-amber-50/20 space-y-3">
+              <div className="flex justify-between items-center border-b border-amber-100 pb-3">
+                <h3 className="text-xs font-bold font-outfit text-amber-950 uppercase tracking-wider flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-amber-600" /> {sec.title}
+                </h3>
+                <button
+                  onClick={async () => {
+                    try {
+                      await api.delete(`/candidates/profile/sections/${sec.sectionId}`);
+                      setCandidate(prev => ({
+                        ...prev,
+                        customSections: (prev.customSections || []).filter(s => s.sectionId !== sec.sectionId)
+                      }));
+                    } catch (err) {
+                      console.error('Error deleting section:', err);
+                    }
+                  }}
+                  className="text-slate-400 hover:text-rose-600 transition-colors"
+                  title="Remove Section"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {sec.content && (
+                <p className="text-xs text-slate-700 leading-relaxed font-medium">{sec.content}</p>
+              )}
+
+              {sec.items && sec.items.length > 0 && (
+                <div className="space-y-2">
+                  {sec.items.map((it, idx) => (
+                    <div key={idx} className="p-3 rounded-xl bg-white border border-amber-100 text-xs space-y-1">
+                      <div className="font-bold text-slate-900">{it.title || it.name || it.organization || it.category || `Item ${idx + 1}`}</div>
+                      {it.description && <p className="text-slate-600 text-[11px]">{it.description}</p>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
         </div>
       </div>
 

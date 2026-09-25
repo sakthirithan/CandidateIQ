@@ -3,6 +3,8 @@ import api from '../../services/api';
 import { mockJobService } from '../../services/mockApi/jobService';
 import { mockTrackerService } from '../../services/mockApi/trackerService';
 import { mockApplicationService } from '../../services/mockApi/applicationService';
+import { formatExperience, formatSalary } from '../../utils/formatters';
+import ApplicationModal from './ApplicationModal';
 import {
   Briefcase, MapPin, CheckCircle2, ChevronRight, Sparkles, Search, DollarSign,
   Bookmark, BookmarkCheck, Calendar, ArrowRight, Building, Zap, Copy
@@ -16,6 +18,7 @@ function JobDiscovery({ onSelectJob }) {
   const [trackedJobIds, setTrackedJobIds] = useState([]);
   const [candidateApps, setCandidateApps] = useState([]);
   const [toastMsg, setToastMsg] = useState(null);
+  const [selectedJobForApply, setSelectedJobForApply] = useState(null);
 
   // Search, Filters & Sorting
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,7 +37,7 @@ function JobDiscovery({ onSelectJob }) {
     try {
       setLoading(true);
       const currentUser = getCurrentUser();
-      const candidateId = currentUser?.id || 'cand_1';
+      const candidateId = currentUser?.id || currentUser?._id || 'cand_1';
 
       const res = await api.get('/jobs').catch(() => null);
       let jobList = [];
@@ -48,12 +51,17 @@ function JobDiscovery({ onSelectJob }) {
       setJobs(jobList);
 
       // Fetch tracked jobs status
-      const trackedList = await mockTrackerService.getTrackedJobs();
+      const trackedList = await mockTrackerService.getTrackedJobs().catch(() => []);
       setTrackedJobIds(trackedList.map((t) => t.jobId));
 
-      // Fetch candidate-specific applications status
-      const appList = await mockApplicationService.getApplicationsForCandidate(candidateId);
-      setCandidateApps(appList || []);
+      // Fetch candidate-specific applications status from DB or mock
+      const apiAppsRes = await api.get('/jobs/candidate/my-applications').catch(() => null);
+      if (apiAppsRes?.data?.applications) {
+        setCandidateApps(apiAppsRes.data.applications);
+      } else {
+        const appList = await mockApplicationService.getApplicationsForCandidate(candidateId);
+        setCandidateApps(appList || []);
+      }
     } catch (err) {
       const mockList = await mockJobService.getJobs();
       setJobs(mockList);
@@ -64,35 +72,36 @@ function JobDiscovery({ onSelectJob }) {
 
   const showToast = (msg) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 3000);
+    setTimeout(() => setToastMsg(null), 4000);
   };
 
-  const handleToggleTrackJob = async (e, jobId) => {
+  const handleOpenApplyModal = (e, job, isApplied) => {
     e.stopPropagation();
-    if (trackedJobIds.includes(jobId)) {
-      await mockTrackerService.untrackJob(jobId);
-      setTrackedJobIds(trackedJobIds.filter((id) => id !== jobId));
-      showToast('Removed job from your tracker.');
-    } else {
-      await mockTrackerService.trackJob(jobId, 'Interested');
-      setTrackedJobIds([...trackedJobIds, jobId]);
-      showToast('Job added to your tracker!');
+    if (isApplied) {
+      showToast('You have already applied for this job position.');
+      return;
     }
+    setSelectedJobForApply(job);
+  };
+
+  const handleApplicationSuccess = (createdApp) => {
+    showToast('Application submitted successfully! Your application is now visible to the recruiter.');
+    fetchJobs();
   };
 
   // Filter & Search Logic
   let filtered = jobs.filter((j) => {
     const query = searchQuery.toLowerCase();
     const matchesSearch =
-      j.title.toLowerCase().includes(query) ||
-      j.company?.toLowerCase().includes(query) ||
-      j.description?.toLowerCase().includes(query) ||
+      (j.title || '').toLowerCase().includes(query) ||
+      (j.company || '').toLowerCase().includes(query) ||
+      (j.description || '').toLowerCase().includes(query) ||
       (j.requiredSkills || []).some((s) => s.toLowerCase().includes(query));
 
-    const matchesLocation = locationFilter === 'All' || j.location.toLowerCase().includes(locationFilter.toLowerCase());
-    const matchesExperience = experienceFilter === 'All' || (j.experience && j.experience.includes(experienceFilter));
-    const matchesType = typeFilter === 'All' || j.type?.toLowerCase() === typeFilter.toLowerCase();
-    const matchesDept = departmentFilter === 'All' || j.department?.toLowerCase() === departmentFilter.toLowerCase();
+    const matchesLocation = locationFilter === 'All' || (j.location || '').toLowerCase().includes(locationFilter.toLowerCase());
+    const matchesExperience = experienceFilter === 'All' || (j.experienceLevel && j.experienceLevel.includes(experienceFilter));
+    const matchesType = typeFilter === 'All' || (j.employmentType || j.type || '').toLowerCase() === typeFilter.toLowerCase();
+    const matchesDept = departmentFilter === 'All' || (j.department || '').toLowerCase() === departmentFilter.toLowerCase();
     const matchesSkill = skillFilter === 'All' || (j.requiredSkills || []).includes(skillFilter);
 
     return matchesSearch && matchesLocation && matchesExperience && matchesType && matchesDept && matchesSkill;
@@ -104,10 +113,7 @@ function JobDiscovery({ onSelectJob }) {
       return (b.matchPercentage || b.matchScore || 85) - (a.matchPercentage || a.matchScore || 85);
     }
     if (sortBy === 'recent') {
-      return new Date(b.postedDate || '2026-01-01') - new Date(a.postedDate || '2026-01-01');
-    }
-    if (sortBy === 'salary') {
-      return (b.salary || '').localeCompare(a.salary || '');
+      return new Date(b.createdAt || b.postedDate || '2026-01-01') - new Date(a.createdAt || a.postedDate || '2026-01-01');
     }
     return 0;
   });
@@ -165,7 +171,6 @@ function JobDiscovery({ onSelectJob }) {
 
         {/* Filter Controls Row */}
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-xs">
-          {/* Location Filter */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Location</label>
             <select
@@ -175,14 +180,13 @@ function JobDiscovery({ onSelectJob }) {
             >
               <option value="All">All Locations</option>
               <option value="Remote">Remote</option>
+              <option value="Chennai">Chennai</option>
               <option value="San Francisco">San Francisco</option>
               <option value="Austin">Austin</option>
-              <option value="New York">New York</option>
               <option value="Bangalore">Bangalore</option>
             </select>
           </div>
 
-          {/* Experience Filter */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Experience</label>
             <select
@@ -193,12 +197,11 @@ function JobDiscovery({ onSelectJob }) {
               <option value="All">All Levels</option>
               <option value="1-3">1-3 Years</option>
               <option value="2-4">2-4 Years</option>
+              <option value="2–5">2–5 Years</option>
               <option value="4+">4+ Years</option>
-              <option value="6+">6+ Years</option>
             </select>
           </div>
 
-          {/* Employment Type Filter */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Type</label>
             <select
@@ -210,11 +213,9 @@ function JobDiscovery({ onSelectJob }) {
               <option value="Full-Time">Full-Time</option>
               <option value="Part-Time">Part-Time</option>
               <option value="Contract">Contract</option>
-              <option value="Remote">Remote</option>
             </select>
           </div>
 
-          {/* Skills Filter */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Skills</label>
             <select
@@ -223,16 +224,14 @@ function JobDiscovery({ onSelectJob }) {
               className="input-saas w-full text-[11px] py-1.5"
             >
               <option value="All">All Skills</option>
-              <option value="React.js">React.js</option>
+              <option value="React">React</option>
               <option value="Node.js">Node.js</option>
-              <option value="Python">Python</option>
-              <option value="TypeScript">TypeScript</option>
+              <option value="JavaScript">JavaScript</option>
               <option value="MongoDB">MongoDB</option>
               <option value="Docker">Docker</option>
             </select>
           </div>
 
-          {/* Department Filter */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Department</label>
             <select
@@ -242,12 +241,10 @@ function JobDiscovery({ onSelectJob }) {
             >
               <option value="All">All Departments</option>
               <option value="engineering">Engineering</option>
-              <option value="ai research">AI Research</option>
               <option value="product design">Product Design</option>
             </select>
           </div>
 
-          {/* Sorting Control */}
           <div>
             <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Sort By</label>
             <select
@@ -257,24 +254,28 @@ function JobDiscovery({ onSelectJob }) {
             >
               <option value="match">Match Score (High → Low)</option>
               <option value="recent">Most Recent</option>
-              <option value="salary">Highest Salary</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Unstop-Style Job Requisition List Cards (Full Width) */}
+      {/* Job Cards */}
       <div className="space-y-4">
         {filtered.map((job) => {
-          const jobId = job.id || job._id;
-          const isTracked = trackedJobIds.includes(jobId);
-          const candidateApp = candidateApps.find((a) => a.jobId === jobId || a.jobId === String(jobId));
-          const appStatus = candidateApp?.status || (candidateApp ? 'Applied' : null);
+          const jobId = job._id || job.id;
+          const candidateApp = candidateApps.find(
+            (a) =>
+              (a.job && String(a.job._id || a.job) === String(jobId)) ||
+              a.jobId === jobId ||
+              a.jobId === String(jobId)
+          );
+          const isApplied = Boolean(candidateApp || job.isApplied);
+          const appStatus = candidateApp?.status || (isApplied ? 'Applied' : null);
           const matchScore = job.matchPercentage || job.matchScore || 91;
 
           const renderStatusBadge = () => {
             if (!appStatus) return null;
-            const st = appStatus.toLowerCase();
+            const st = (appStatus || '').toLowerCase();
             if (st.includes('select') || st.includes('hired')) {
               return (
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 flex items-center gap-1">
@@ -292,7 +293,7 @@ function JobDiscovery({ onSelectJob }) {
             if (st.includes('interview')) {
               return (
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-800 border border-purple-200 flex items-center gap-1">
-                  <Sparkles className="w-3 h-3 text-purple-600" /> Interview Scheduled
+                  <Sparkles className="w-3 h-3 text-purple-600" /> Interview Stage
                 </span>
               );
             }
@@ -300,13 +301,6 @@ function JobDiscovery({ onSelectJob }) {
               return (
                 <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-cyan-50 text-cyan-800 border border-cyan-200">
                   Shortlisted
-                </span>
-              );
-            }
-            if (st.includes('review')) {
-              return (
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                  Under Review
                 </span>
               );
             }
@@ -358,21 +352,41 @@ function JobDiscovery({ onSelectJob }) {
                 <div className="flex flex-wrap items-center gap-3 font-medium text-slate-500">
                   <span className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-slate-400" /> {job.location}</span>
                   <span>•</span>
-                  <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5 text-slate-400" /> {job.experience || '2-4 Years'}</span>
+                  <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5 text-slate-400" /> {formatExperience(job.experience, job.experienceLevel)}</span>
                   <span>•</span>
-                  <span className="font-bold text-emerald-600 flex items-center gap-1"><DollarSign className="w-3.5 h-3.5" /> {job.salary || '$140k - $170k'}</span>
+                  <span className="font-bold text-emerald-600 flex items-center gap-1"><DollarSign className="w-3.5 h-3.5 text-emerald-600" /> {formatSalary(job.salary, job.salary)}</span>
                 </div>
 
                 {/* Card Action Buttons */}
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={(e) => handleOpenApplyModal(e, job, isApplied)}
+                    disabled={isApplied}
+                    className={`text-xs px-3.5 py-1.5 font-bold rounded-xl flex items-center gap-1 cursor-pointer transition-all ${
+                      isApplied
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 cursor-not-allowed'
+                        : 'btn-primary bg-indigo-600 hover:bg-indigo-700 text-white'
+                    }`}
+                  >
+                    {isApplied ? (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Applied
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-3.5 h-3.5 text-amber-300" /> Apply
+                      </>
+                    )}
+                  </button>
+
+                  <button
                     onClick={(e) => {
                       e.stopPropagation();
                       if (onSelectJob) onSelectJob(jobId);
                     }}
-                    className="btn-primary text-xs px-4 py-1.5 font-bold flex items-center gap-1.5 shadow-sm group-hover:bg-indigo-700"
+                    className="btn-secondary text-xs px-3.5 py-1.5 font-bold flex items-center gap-1 border-slate-200 hover:bg-slate-50"
                   >
-                    View Job <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
+                    View Details <ChevronRight className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" />
                   </button>
                 </div>
               </div>
@@ -388,8 +402,17 @@ function JobDiscovery({ onSelectJob }) {
           </div>
         )}
       </div>
+
+      {/* Unstop Style Application Modal */}
+      <ApplicationModal
+        job={selectedJobForApply}
+        isOpen={Boolean(selectedJobForApply)}
+        onClose={() => setSelectedJobForApply(null)}
+        onSuccess={handleApplicationSuccess}
+      />
     </div>
   );
 }
 
 export default JobDiscovery;
+

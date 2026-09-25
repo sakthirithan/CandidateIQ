@@ -119,4 +119,84 @@ const getAllProfiles = async (req, res, next) => {
   }
 };
 
-module.exports = { getMyProfile, upsertProfile, getProfileByUserId, getAllProfiles };
+// @desc    Update or add a dynamic custom section in candidate profile
+// @route   PATCH /api/candidates/profile/sections/:sectionId
+// @access  Private (Candidate)
+const updateCustomSection = async (req, res, next) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const { sectionId } = req.params;
+    const { title, content, items, sectionType } = req.body;
+
+    let profile = await CandidateProfile.findOne({ user: userId });
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Candidate profile not found.' });
+    }
+
+    const sectionIndex = (profile.customSections || []).findIndex(sec => sec.sectionId === sectionId);
+
+    if (sectionIndex !== -1) {
+      if (title) profile.customSections[sectionIndex].title = title;
+      if (content !== undefined) profile.customSections[sectionIndex].content = content;
+      if (items !== undefined) profile.customSections[sectionIndex].items = items;
+      if (sectionType) profile.customSections[sectionIndex].sectionType = sectionType;
+      profile.customSections[sectionIndex].updatedAt = new Date();
+    } else {
+      profile.customSections.push({
+        sectionId: sectionId || `custom_${Date.now()}`,
+        sectionType: sectionType || 'custom',
+        title: title || 'New Custom Section',
+        content: content || '',
+        items: items || [],
+        updatedAt: new Date()
+      });
+    }
+
+    await profile.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile custom section updated successfully.',
+      profile
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete a dynamic custom section from candidate profile
+// @route   DELETE /api/candidates/profile/sections/:sectionId
+// @access  Private (Candidate)
+const deleteCustomSection = async (req, res, next) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const { sectionId } = req.params;
+
+    let profile = await CandidateProfile.findOne({ user: userId });
+    if (!profile) {
+      return res.status(404).json({ success: false, message: 'Candidate profile not found.' });
+    }
+
+    profile.customSections = (profile.customSections || []).filter(sec => sec.sectionId !== sectionId);
+
+    await profile.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Custom section removed from profile.',
+      profile
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  computeSkillAnalytics,
+  getMyProfile,
+  upsertProfile,
+  getProfileByUserId,
+  getAllProfiles,
+  updateCustomSection,
+  deleteCustomSection
+};

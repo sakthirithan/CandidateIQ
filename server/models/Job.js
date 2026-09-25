@@ -24,6 +24,44 @@ const jobSchema = new mongoose.Schema(
       type: String,
       default: '1-3 Years'
     },
+    experience: {
+      min: {
+        type: Number,
+        min: [0, 'Minimum experience must be non-negative'],
+        default: 0
+      },
+      max: {
+        type: Number,
+        min: [0, 'Maximum experience must be non-negative'],
+        default: 0
+      },
+      unit: {
+        type: String,
+        enum: ['years', 'months'],
+        default: 'years'
+      }
+    },
+    salary: {
+      min: {
+        type: Number,
+        min: [0, 'Minimum salary must be non-negative'],
+        default: 0
+      },
+      max: {
+        type: Number,
+        min: [0, 'Maximum salary must be non-negative'],
+        default: 0
+      },
+      currency: {
+        type: String,
+        default: 'INR'
+      },
+      period: {
+        type: String,
+        enum: ['year', 'month'],
+        default: 'year'
+      }
+    },
     education: {
       type: String,
       default: "Bachelor's Degree in Computer Science or related field"

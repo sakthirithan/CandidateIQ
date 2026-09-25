@@ -26,6 +26,7 @@ const jobRoutes = require('./routes/jobRoutes');
 const interviewRoutes = require('./routes/interviewRoutes');
 const analyticsRoutes = require('./routes/analyticsRoutes');
 const adminRoutes = require('./routes/adminRoutes');
+const aiTestRoutes = require('./routes/aiTestRoutes');
 
 // Mount Routes
 app.use('/api/auth', authRoutes);
@@ -35,6 +36,7 @@ app.use('/api/jobs', jobRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiTestRoutes);
 
 // Health Check API Endpoint
 app.get('/api/health', (req, res) => {

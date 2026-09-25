@@ -554,6 +554,7 @@ function RecruiterCandidateManagement({ onNavigate }) {
                   </span>
                   <div className="flex flex-wrap items-center gap-1.5">
                     {[
+                      { id: 'appForm', label: 'Application Submission', icon: FileText },
                       { id: 'profile', label: 'Candidate Profile', icon: User },
                       { id: 'skills', label: 'Skills', icon: Brain },
                       { id: 'jobMatch', label: 'Job Match', icon: Layers },
@@ -581,6 +582,76 @@ function RecruiterCandidateManagement({ onNavigate }) {
 
               {/* CASCADE TAB CONTENT PANELS */}
               <div className="saas-card p-6 md:p-8 border border-slate-200/90 bg-white shadow-sm">
+                {/* 0. Application Form Submission (Snapshot) */}
+                {activeCascadeTab === 'appForm' && (
+                  <div className="space-y-4 text-xs">
+                    <h3 className="text-sm font-bold font-outfit text-slate-950 uppercase tracking-wider border-b border-slate-100 pb-2">
+                      Historical Application Form Snapshot
+                    </h3>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-medium">
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Submitted Resume</span>
+                        <span className="text-indigo-600 font-bold flex items-center gap-1">
+                          <FileText className="w-3.5 h-3.5 text-indigo-500" />
+                          {activeApp.resumeSnapshot?.fileName || 'Candidate_Resume.pdf'}
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-emerald-50/60 border border-emerald-200/80 space-y-1">
+                        <span className="text-[10px] text-emerald-800 font-bold uppercase block">Expected Compensation</span>
+                        <span className="text-emerald-700 font-extrabold font-mono">
+                          {activeApp.expectedCompensation?.formatted || 'Not specified'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-medium">
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Contact & Location</span>
+                        <span className="text-slate-900 font-semibold block">
+                          Phone: {activeApp.candidateSnapshot?.mobile || candidateUser.phone || 'N/A'}
+                        </span>
+                        <span className="text-slate-600 block">
+                          Location: {activeApp.candidateSnapshot?.location || 'N/A'}
+                        </span>
+                        <span className="text-slate-500 text-[10px] block">
+                          Gender: {activeApp.candidateSnapshot?.gender || 'Not Specified'}
+                        </span>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-1">
+                        <span className="text-[10px] text-slate-400 font-bold uppercase block">Professional Details</span>
+                        <span className="text-slate-900 font-bold block">
+                          {activeApp.professionalSnapshot?.designation || 'Software Engineer'} ({activeApp.professionalSnapshot?.userType || 'Professional'})
+                        </span>
+                        <span className="text-slate-600 block">
+                          Experience: {activeApp.professionalSnapshot?.experience || '2 Years'}
+                        </span>
+                        <span className="text-slate-600 block">
+                          Organization: {activeApp.professionalSnapshot?.organization || 'Tech Solutions'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Screening Answers */}
+                    {activeApp.screeningAnswers && activeApp.screeningAnswers.length > 0 && (
+                      <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 space-y-2">
+                        <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider block">
+                          Screening Questions & Answers
+                        </span>
+                        {activeApp.screeningAnswers.map((qa, idx) => (
+                          <div key={idx} className="space-y-0.5 border-b border-indigo-100/60 pb-2 last:border-b-0 last:pb-0">
+                            <span className="font-bold text-slate-900 block">{qa.question}</span>
+                            <span className="text-slate-700 font-medium block bg-white/70 p-2 rounded-lg border border-indigo-100/80">
+                              {qa.answer}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {/* 1. Candidate Profile */}
                 {activeCascadeTab === 'profile' && (
                   <div className="space-y-4">

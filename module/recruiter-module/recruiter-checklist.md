@@ -46,16 +46,23 @@
 - [✓] Display search and status filters for jobs and candidates
 - [✓] Loading spinners and error handling toasts
 - [✓] Sidebar tabs display HR-friendly terminology (`Dashboard`, `Jobs`, `Candidates & Applications`, `Candidate Intelligence`, `Compare Candidates`, `AI Assistant`)
+- [✓] Structured **Experience Required** inputs (`expMin`, `expMax`, `expUnit`) added to Create & Edit Job forms
+- [✓] Structured **Salary Compensation** inputs (`salMin`, `salMax`, `salCurrency`, `salPeriod`) added to Create & Edit Job forms
+- [✓] Pre-submission validation for Experience (`min >= 0`, `max >= min`) and Salary (`min >= 0`, `max >= min`)
+- [✓] Structured Confirmation Dialog displaying formatted Experience (e.g. `2–5 Years`) and Salary (e.g. `₹4 LPA – ₹8 LPA`) summary prior to API dispatch
+- [✓] Recruiter Job Cards & Candidate Job Discovery render formatted Experience & Salary with legacy fallback support
 
 ## 6. Database Persistence & Synchronization
-- [✓] Job creation persists in MongoDB and refreshes job list & dashboard metrics
+- [✓] Job creation persists in MongoDB `jobs` collection with structured `experience` and `salary` objects and refreshes job list & dashboard metrics
+- [✓] Backend Express controller validates `experience` and `salary` (`400 Bad Request` if invalid)
 - [✓] Job status updates persist across page refresh and logout/login
 - [✓] Shortlisting updates application status in MongoDB
 - [✓] Interview scheduling creates real `Interview` record in MongoDB
+- [✓] Legacy job records safely handle missing `experience` or `salary` fields without crashing
 
 ## 7. Feature Reorganization & Documentation
 - [✓] Create `module/recruiter-module/dashboard.md`
-- [✓] Create `module/recruiter-module/jobs.md`
+- [✓] Create `module/recruiter-module/jobs.md` (updated with Experience & Salary field specs)
 - [✓] Create `module/recruiter-module/candidates.md`
 - [✓] Create `module/recruiter-module/interviews.md`
 

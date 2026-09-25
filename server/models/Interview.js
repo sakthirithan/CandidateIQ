@@ -16,7 +16,7 @@ const interviewSchema = new mongoose.Schema(
     jobTitle: String,
     interviewType: {
       type: String,
-      enum: ['technical', 'behavioural', 'mixed', 'hr'],
+      enum: ['technical', 'behavioural', 'mixed', 'hr', 'mcq'],
       default: 'mixed'
     },
     difficulty: {
@@ -33,12 +33,26 @@ const interviewSchema = new mongoose.Schema(
     notes: String,
     questions: [
       {
-        questionId: Number,
+        questionId: mongoose.Schema.Types.Mixed,
         category: String,
         questionText: String,
         targetSkill: String,
         evaluationCriteria: String,
         candidateResponse: String,
+        options: [
+          {
+            id: String,
+            text: String
+          }
+        ],
+        correctAnswer: String,
+        mcqExplanation: String,
+        voiceMeta: {
+          audioUrl: String,
+          durationSeconds: Number,
+          transcript: String,
+          confidence: Number
+        },
         evaluation: {
           technicalScore: Number,
           communicationScore: Number,
@@ -58,9 +72,41 @@ const interviewSchema = new mongoose.Schema(
       behaviouralCompetency: Number,
       communicationClarity: Number,
       problemSolvingRating: Number,
+      mcqScore: Number,
+      voiceScore: Number,
       summaryExplanation: String,
       topStrengths: [String],
       recommendedImprovementAreas: [String]
+    },
+    englishLanguageAnalysis: {
+      grammarScore: Number,
+      vocabularyScore: Number,
+      fluencyScore: Number,
+      coherenceScore: Number,
+      clarityScore: Number,
+      observations: [String]
+    },
+    behaviouralSignals: {
+      directness: Number,
+      responsiveness: Number,
+      logicalStructure: Number,
+      problemSolvingApproach: Number,
+      adaptabilityDemonstrated: Number,
+      projectOwnership: Number,
+      observations: [String]
+    },
+    sentimentAnalysis: {
+      overall: String,
+      confidence: Number,
+      engagement: String,
+      observations: [String]
+    },
+    resumeComparison: {
+      matchedClaims: [String],
+      areasRequiringFurtherValidation: [String],
+      technicalConsistency: Number,
+      experienceConsistency: Number,
+      explanation: String
     }
   },
   { timestamps: true }
