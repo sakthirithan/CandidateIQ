@@ -20,7 +20,7 @@ const applicationSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['applied', 'under_review', 'interview_scheduled', 'shortlisted', 'rejected'],
+      enum: ['applied', 'under_review', 'interview_scheduled', 'shortlisted', 'rejected', 'selected', 'withdrawn'],
       default: 'applied'
     },
     matchAnalysis: {
@@ -37,5 +37,7 @@ const applicationSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+applicationSchema.index({ candidate: 1, job: 1 }, { unique: true });
 
 module.exports = mongoose.model('Application', applicationSchema);

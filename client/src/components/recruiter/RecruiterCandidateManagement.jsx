@@ -102,29 +102,175 @@ function RecruiterCandidateManagement({ onNavigate }) {
     setTimeout(() => setToastMsg(null), 3500);
   };
 
+  // Helper function for calculating schedule window start & end timestamps
+  const calculateScheduleWindow = (dateStr, timeStr, durationStr) => {
+    if (!dateStr || !timeStr) return { startISO: '', endISO: '', endDisplay: '12:00 PM', durationMinutes: 120 };
+
+    let [hStr, mStr] = (timeStr || '10:00').split(':');
+    let hours = parseInt(hStr || '10', 10);
+    let minutes = parseInt((mStr || '00').split(' ')[0], 10);
+
+    if (timeStr.toLowerCase().includes('pm') && hours < 12) hours += 12;
+    if (timeStr.toLowerCase().includes('am') && hours === 12) hours = 0;
+
+    const startDate = new Date(dateStr);
+    startDate.setHours(hours, minutes, 0, 0);
+
+    let durationMinutes = 120;
+    const numMatch = (durationStr || '').match(/(\d+)/);
+    if (numMatch) {
+      const num = parseInt(numMatch[1], 10);
+      durationMinutes = durationStr.toLowerCase().includes('hour') ? num * 60 : num;
+    }
+
+    const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+    const isNextDay = endDate.getDate() !== startDate.getDate();
+    const timeFormatted = endDate.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    const endDisplay = isNextDay
+      ? `${timeFormatted} (${endDate.toLocaleDateString('en-US', { day: 'numeric', month: 'short' })})`
+      : timeFormatted;
+
+    return {
+      startISO: startDate.toISOString(),
+      endISO: endDate.toISOString(),
+      endDisplay,
+      durationMinutes,
+      startDateObj: startDate,
+      endDateObj: endDate
+    };
+  };
+
+  // HR / Job Interview Scheduling Modal State
+  const [showScheduleHRModal, setShowScheduleHRModal] = useState(false);
+  const [selectedCandidateIdsForSchedule, setSelectedCandidateIdsForSchedule] = useState(['cand_1']);
+  const [hrForm, setHrForm] = useState({
+    title: '',
+    date: new Date().toISOString().split('T')[0],
+    time: '10:00',
+    duration: '2 Hours',
+    type: 'Recruiter Job Assessment Round',
+    roundCategory: 'FINAL', // 'HR' | 'FINAL'
+    interviewer: 'Lead Hiring Manager & Senior Architect',
+    instructions: 'Please answer all recruiter assessment questions within the scheduled window.',
+    additionalDetails: 'Prepare system design and architectural principles for evaluation.',
+    meetingLink: 'https://meet.candidateiq.com/room/job-int-live',
+    notes: '',
+    evaluationPrompt: 'Evaluate candidate responses based on technical correctness, relevance to reference answers, clarity, and practical engineering choices.',
+    questionsText: `[
+  {
+    "questionId": "q_job_1",
+    "question": "Explain how you design resilient distributed caching in high-throughput microservices.",
+    "type": "TEXT",
+    "expectedAnswer": "Should mention Redis cluster, LRU eviction, distributed locks or singleflight, and cache-aside or write-through patterns.",
+    "topic": "System Architecture"
+  },
+  {
+    "questionId": "q_job_2",
+    "question": "Which HTTP status code is most appropriate when a client payload fails validation schema rules?",
+    "type": "MCQ",
+    "options": ["400 Bad Request", "422 Unprocessable Entity", "401 Unauthorized", "500 Internal Server Error"],
+    "correctOption": "422 Unprocessable Entity",
+    "expectedAnswer": "422 Unprocessable Entity",
+    "topic": "REST API"
+  },
+  {
+    "questionId": "q_job_3",
+    "question": "Describe your approach to managing database migrations during zero-downtime deployments.",
+    "type": "VOICE",
+    "expectedAnswer": "Explain backward-compatible schema changes (expand/contract pattern), non-blocking index creation, feature flags, and replication sync.",
+    "topic": "DevOps & Database"
+  }
+]`
+  });
+
   // Recruiter Action Handlers (Shortlist, Reject, Move to Interview, Archive, Compare)
   const handleShortlistCandidate = async (candId) => {
     const app = applications.find((a) => a.candidateId === candId || a.candidateName === activeCandidate?.name);
     if (app) {
       await mockApplicationService.updateApplicationStatus(app.id, 'Shortlisted');
+      setApplications(prev => prev.map(a => a.id === app.id ? { ...a, status: 'Shortlisted' } : a));
     }
-    showToast(`Candidate "${activeCandidate?.name || 'Selected'}" successfully Shortlisted!`);
+    showToast(`Candidate "${activeCandidate?.name || 'Selected'}" successfully Shortlisted! Job interview scheduling is now available.`);
   };
 
-  const handleRejectCandidate = async (candId) => {
-    const app = applications.find((a) => a.candidateId === candId || a.candidateName === activeCandidate?.name);
-    if (app) {
-      await mockApplicationService.updateApplicationStatus(app.id, 'Rejected');
+  const handleOpenScheduleHRModal = () => {
+    const app = applications.find((a) => a.candidateId === activeCandidate?.id || a.candidateName === activeCandidate?.name);
+    const isShortlisted = app && (app.status === 'Shortlisted' || app.status === 'Interview' || app.status === 'Selected');
+    if (!isShortlisted) {
+      showToast('Interview scheduling becomes available after the candidate is shortlisted for this job.');
+      return;
     }
-    showToast(`Candidate "${activeCandidate?.name || 'Selected'}" marked as Rejected.`);
+    setHrForm(prev => ({
+      ...prev,
+      title: `${selectedJobObj?.title || 'Technical Role'} — ${prev.roundCategory === 'FINAL' ? 'Job Interview' : 'HR Interview'}`
+    }));
+    setShowScheduleHRModal(true);
   };
 
-  const handleMoveToInterview = async (candId) => {
-    const app = applications.find((a) => a.candidateId === candId || a.candidateName === activeCandidate?.name);
-    if (app) {
-      await mockApplicationService.updateApplicationStatus(app.id, 'Interview');
+  const handleScheduleHRInterviewSubmit = async (e) => {
+    e.preventDefault();
+    if (selectedCandidateIdsForSchedule.length === 0) {
+      showToast('Please select at least one shortlisted candidate to schedule the interview.');
+      return;
     }
-    showToast(`Candidate "${activeCandidate?.name || 'Selected'}" invited to Interview round!`);
+
+    let parsedQuestions = [];
+    try {
+      parsedQuestions = JSON.parse(hrForm.questionsText);
+    } catch (err) {
+      showToast('Invalid Question Bank JSON formatting. Please check syntax.');
+      return;
+    }
+
+    try {
+      const selectedCandidatesList = candidates
+        .filter(c => selectedCandidateIdsForSchedule.includes(c.id))
+        .map(c => ({ id: c.id, name: c.name }));
+
+      const windowData = calculateScheduleWindow(hrForm.date, hrForm.time, hrForm.duration);
+
+      await mockApplicationService.scheduleHRInterview({
+        candidateId: selectedCandidateIdsForSchedule[0],
+        candidateIds: selectedCandidateIdsForSchedule,
+        selectedCandidates: selectedCandidatesList,
+        candidateName: selectedCandidatesList[0]?.name || activeCandidate?.name || 'Alex Johnson',
+        jobId: selectedJobObj?.id || 'job_1',
+        jobTitle: selectedJobObj?.title || 'Senior MERN Stack & AI Engineer',
+        company: selectedJobObj?.company || 'CandidateIQ Enterprise',
+        title: hrForm.title,
+        type: hrForm.roundCategory, // 'HR' or 'FINAL'
+        interviewDate: hrForm.date,
+        startTime: hrForm.time,
+        scheduleDurationMinutes: windowData.durationMinutes,
+        startDateTime: windowData.startISO,
+        endDateTime: windowData.endISO,
+        scheduledDate: hrForm.date,
+        scheduledTime: hrForm.time,
+        duration: hrForm.duration,
+        interviewType: hrForm.type,
+        interviewer: hrForm.interviewer,
+        instructions: hrForm.instructions,
+        additionalDetails: hrForm.additionalDetails,
+        meetingLink: hrForm.meetingLink,
+        notes: hrForm.notes,
+        questionBankSnapshot: {
+          questionBankId: `qb_${Date.now()}`,
+          jobId: selectedJobObj?.id || 'job_1',
+          questions: parsedQuestions
+        },
+        evaluationPromptSnapshot: {
+          promptId: `ep_${Date.now()}`,
+          prompt: hrForm.evaluationPrompt
+        }
+      });
+
+      showToast(`${hrForm.roundCategory === 'FINAL' ? 'Job' : 'HR'} Interview scheduled for selected candidate group! Reflected on Candidate Interview page.`);
+      setShowScheduleHRModal(false);
+      loadData();
+    } catch (err) {
+      console.error(err);
+      showToast(err.message || 'Failed to schedule interview');
+    }
   };
 
   const handleArchiveCandidate = async (candId) => {
@@ -553,17 +699,35 @@ function RecruiterCandidateManagement({ onNavigate }) {
                   <div className="flex flex-wrap gap-2">
                     <button
                       onClick={() => handleShortlistCandidate(activeCandidate?.id)}
-                      className="px-3 py-2 rounded-xl bg-cyan-50 text-cyan-800 border border-cyan-200 font-bold text-xs hover:bg-cyan-100 flex items-center gap-1.5"
+                      className="px-3 py-2 rounded-xl bg-cyan-50 text-cyan-800 border border-cyan-200 font-bold text-xs hover:bg-cyan-100 flex items-center gap-1.5 cursor-pointer"
                     >
-                      <UserCheck className="w-3.5 h-3.5" /> Shortlist
+                      <UserCheck className="w-3.5 h-3.5" /> Shortlist Candidate
                     </button>
 
-                    <button
-                      onClick={() => handleMoveToInterview(activeCandidate?.id)}
-                      className="px-3 py-2 rounded-xl bg-purple-50 text-purple-800 border border-purple-200 font-bold text-xs hover:bg-purple-100 flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-purple-600" /> Move to Interview
-                    </button>
+                    {(() => {
+                      const app = applications.find((a) => a.candidateId === activeCandidate?.id || a.candidateName === activeCandidate?.name);
+                      const isShortlisted = app && (app.status === 'Shortlisted' || app.status === 'Interview' || app.status === 'Selected');
+
+                      return (
+                        <div className="relative group">
+                          <button
+                            onClick={handleOpenScheduleHRModal}
+                            className={`px-3 py-2 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer ${
+                              isShortlisted
+                                ? 'bg-purple-600 text-white shadow-xs hover:bg-purple-700'
+                                : 'bg-slate-100 text-slate-400 border border-slate-200 opacity-60'
+                            }`}
+                          >
+                            <Sparkles className="w-3.5 h-3.5 text-purple-300" /> Schedule HR Interview
+                          </button>
+                          {!isShortlisted && (
+                            <div className="absolute right-0 top-12 hidden group-hover:block z-30 px-3 py-1.5 rounded-xl bg-slate-900 text-white text-[11px] font-medium whitespace-nowrap shadow-xl border border-slate-800">
+                              Interview scheduling becomes available after candidate is shortlisted.
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <button
                       onClick={() => handleRejectCandidate(activeCandidate?.id)}
@@ -766,6 +930,189 @@ function RecruiterCandidateManagement({ onNavigate }) {
           )}
         </div>
       </div>
+
+      {/* Recruiter Schedule HR Interview Modal */}
+      {showScheduleHRModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="saas-card p-6 border border-slate-200 bg-white max-w-xl w-full rounded-2xl shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-extrabold font-outfit text-slate-950">Schedule HR Recruitment Interview</h3>
+                <p className="text-xs text-slate-500">Assign official interview round for shortlisted candidate: {activeCandidate?.name}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowScheduleHRModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleScheduleHRInterviewSubmit} className="space-y-4">
+              {/* Category & Title */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-bold text-indigo-700">Interview Category</label>
+                  <select
+                    value={hrForm.roundCategory}
+                    onChange={(e) => {
+                      const cat = e.target.value;
+                      setHrForm({
+                        ...hrForm,
+                        roundCategory: cat,
+                        title: `${selectedJobObj?.title || 'Technical Role'} — ${cat === 'FINAL' ? 'Job Interview' : 'HR Interview'}`
+                      });
+                    }}
+                    className="input-saas w-full text-xs font-bold bg-indigo-50 border-indigo-200 text-indigo-900"
+                  >
+                    <option value="FINAL">Job Interview</option>
+                    <option value="HR">HR Interview</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Interview Title</label>
+                  <input
+                    type="text"
+                    required
+                    value={hrForm.title}
+                    onChange={(e) => setHrForm({ ...hrForm, title: e.target.value })}
+                    className="input-saas w-full text-xs font-semibold"
+                  />
+                </div>
+              </div>
+
+              {/* Shortlisted Candidates Selection */}
+              <div className="space-y-1 p-3 rounded-xl bg-purple-50/70 border border-purple-100">
+                <label className="font-bold text-purple-900 text-xs flex items-center justify-between">
+                  <span>Select Shortlisted Candidates ({selectedCandidateIdsForSchedule.length} Selected)</span>
+                  <span className="text-[10px] text-purple-600 font-semibold">Only shortlisted candidates eligible</span>
+                </label>
+                <div className="max-h-28 overflow-y-auto space-y-1.5 pt-1">
+                  {candidates.map((cand) => {
+                    const isSelected = selectedCandidateIdsForSchedule.includes(cand.id);
+                    return (
+                      <label
+                        key={cand.id}
+                        className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs cursor-pointer transition-all ${
+                          isSelected
+                            ? 'bg-white border-purple-300 text-purple-900 font-bold shadow-xs'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCandidateIdsForSchedule(prev => [...prev, cand.id]);
+                            } else {
+                              setSelectedCandidateIdsForSchedule(prev => prev.filter(id => id !== cand.id));
+                            }
+                          }}
+                          className="rounded text-purple-600 focus:ring-purple-500"
+                        />
+                        <span>{cand.name} &bull; {cand.headline || 'Full Stack Engineer'}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Date, Time, Duration & Calculated End Time */}
+              <div className="grid grid-cols-4 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Interview Date</label>
+                  <input
+                    type="date"
+                    required
+                    value={hrForm.date}
+                    onChange={(e) => setHrForm({ ...hrForm, date: e.target.value })}
+                    className="input-saas w-full text-xs font-semibold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Start Time</label>
+                  <input
+                    type="time"
+                    required
+                    value={hrForm.time}
+                    onChange={(e) => setHrForm({ ...hrForm, time: e.target.value })}
+                    className="input-saas w-full text-xs font-semibold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Duration</label>
+                  <select
+                    value={hrForm.duration}
+                    onChange={(e) => setHrForm({ ...hrForm, duration: e.target.value })}
+                    className="input-saas w-full text-xs font-semibold"
+                  >
+                    <option value="30 Minutes">30 Minutes</option>
+                    <option value="1 Hour">1 Hour</option>
+                    <option value="2 Hours">2 Hours</option>
+                    <option value="4 Hours">4 Hours</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700">Calculated End Time</label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={calculateScheduleWindow(hrForm.date, hrForm.time, hrForm.duration).endDisplay}
+                    className="input-saas w-full text-xs bg-slate-100 font-extrabold text-slate-800 cursor-not-allowed border border-slate-200"
+                  />
+                </div>
+              </div>
+
+              {/* Recruiter Evaluation Prompt Editor */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-800 text-xs flex items-center justify-between">
+                  <span>Recruiter HR Evaluation Prompt Snapshot</span>
+                  <span className="text-[10px] text-indigo-600 font-semibold">Controls AI grading criteria</span>
+                </label>
+                <textarea
+                  rows={2}
+                  value={hrForm.evaluationPrompt}
+                  onChange={(e) => setHrForm({ ...hrForm, evaluationPrompt: e.target.value })}
+                  className="input-saas w-full text-xs resize-none font-medium leading-relaxed"
+                  placeholder="Provide explicit instructions on how answers should be evaluated..."
+                ></textarea>
+              </div>
+
+              {/* Question Bank Snapshot JSON Editor */}
+              <div className="space-y-1">
+                <label className="font-bold text-slate-800 text-xs flex items-center justify-between">
+                  <span>Question Bank Snapshot (MCQ, Text, Voice)</span>
+                  <span className="text-[10px] text-purple-600 font-semibold">Authoritative Recruiter Question Key</span>
+                </label>
+                <textarea
+                  rows={4}
+                  value={hrForm.questionsText}
+                  onChange={(e) => setHrForm({ ...hrForm, questionsText: e.target.value })}
+                  className="input-saas w-full text-[11px] font-mono resize-none bg-slate-900 text-emerald-400 p-2.5 rounded-xl border border-slate-800"
+                ></textarea>
+              </div>
+
+              <div className="pt-2 flex justify-end gap-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleHRModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 font-bold text-xs text-slate-600 hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn-primary text-xs px-5 py-2 font-bold shadow-md cursor-pointer"
+                >
+                  Schedule Job Interview
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

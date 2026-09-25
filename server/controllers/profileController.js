@@ -1,8 +1,4 @@
 const CandidateProfile = require('../models/CandidateProfile');
-const { getDBStatus } = require('../config/db');
-
-// In-memory profiles store for fallback mode
-const inMemoryProfiles = new Map();
 
 // Helper to compute AI skill analytics
 const computeSkillAnalytics = (skills = {}) => {
@@ -40,20 +36,12 @@ const computeSkillAnalytics = (skills = {}) => {
 const getMyProfile = async (req, res, next) => {
   try {
     const userId = req.user.id || req.user._id;
+    const profile = await CandidateProfile.findOne({ user: userId });
 
-    if (getDBStatus()) {
-      let profile = await CandidateProfile.findOne({ user: userId });
-      if (!profile) {
-        return res.status(404).json({ success: false, message: 'Profile not found. Please create one.' });
-      }
-      return res.status(200).json({ success: true, profile });
-    }
-
-    // Fallback mode
-    const profile = inMemoryProfiles.get(userId.toString());
     if (!profile) {
       return res.status(404).json({ success: false, message: 'Profile not found. Please create one.' });
     }
+
     return res.status(200).json({ success: true, profile });
   } catch (error) {
     next(error);
@@ -89,18 +77,13 @@ const upsertProfile = async (req, res, next) => {
       skillAnalysis
     };
 
-    if (getDBStatus()) {
-      const profile = await CandidateProfile.findOneAndUpdate(
-        { user: userId },
-        profileData,
-        { new: true, upsert: true, runValidators: true }
-      );
-      return res.status(200).json({ success: true, profile, message: 'Candidate profile saved successfully.' });
-    }
+    const profile = await CandidateProfile.findOneAndUpdate(
+      { user: userId },
+      profileData,
+      { new: true, upsert: true, runValidators: true }
+    );
 
-    // Fallback mode
-    inMemoryProfiles.set(userId.toString(), profileData);
-    return res.status(200).json({ success: true, profile: profileData, message: 'Candidate profile saved successfully.' });
+    return res.status(200).json({ success: true, profile, message: 'Candidate profile saved successfully.' });
   } catch (error) {
     next(error);
   }
@@ -112,23 +95,28 @@ const upsertProfile = async (req, res, next) => {
 const getProfileByUserId = async (req, res, next) => {
   try {
     const { userId } = req.params;
+    const profile = await CandidateProfile.findOne({ $or: [{ user: userId }, { userIdString: userId }] });
 
-    if (getDBStatus()) {
-      const profile = await CandidateProfile.findOne({ $or: [{ user: userId }, { userIdString: userId }] });
-      if (!profile) {
-        return res.status(404).json({ success: false, message: 'Candidate profile not found.' });
-      }
-      return res.status(200).json({ success: true, profile });
-    }
-
-    const profile = inMemoryProfiles.get(userId.toString());
     if (!profile) {
       return res.status(404).json({ success: false, message: 'Candidate profile not found.' });
     }
+
     return res.status(200).json({ success: true, profile });
   } catch (error) {
     next(error);
   }
 };
 
-module.exports = { getMyProfile, upsertProfile, getProfileByUserId };
+// @desc    Get all candidate profiles (Recruiter view)
+// @route   GET /api/candidates/profiles
+// @access  Private (Recruiter/Admin)
+const getAllProfiles = async (req, res, next) => {
+  try {
+    const profiles = await CandidateProfile.find().populate('user', 'name email role');
+    return res.status(200).json({ success: true, profiles });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { getMyProfile, upsertProfile, getProfileByUserId, getAllProfiles };

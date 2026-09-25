@@ -11,7 +11,12 @@ const connectDB = async () => {
     console.log(`[Database] MongoDB Connected: ${conn.connection.host}`);
   } catch (error) {
     isConnected = false;
-    console.warn(`[Database] Warning: MongoDB Connection Failed (${error.message}). Running in fallback mode.`);
+    const isIpBlocked = error.message && error.message.includes('alert number 80');
+    if (isIpBlocked) {
+      console.warn('[Database] Notice: MongoDB Atlas IP Whitelist required (Add 0.0.0.0/0 in Atlas Network Access). Running in Fallback Mode.');
+    } else {
+      console.warn(`[Database] Notice: MongoDB Connection Failed (${error.message}). Running in Fallback Mode.`);
+    }
   }
 };
 

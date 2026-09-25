@@ -2,10 +2,6 @@ const Interview = require('../models/Interview');
 const CandidateProfile = require('../models/CandidateProfile');
 const Job = require('../models/Job');
 const aiService = require('../services/aiService');
-const { getDBStatus } = require('../config/db');
-
-// In-memory interviews store
-const inMemoryInterviews = new Map();
 
 // @desc    Start a dynamic mock interview session
 // @route   POST /api/interviews/start
@@ -15,15 +11,12 @@ const startInterview = async (req, res, next) => {
     const { jobId, interviewType = 'mixed', difficulty = 'Mid-Level', questionCount = 5 } = req.body;
     const userId = req.user.id || req.user._id;
 
-    let candidateProfile;
+    let candidateProfile = await CandidateProfile.findOne({ user: userId });
     let targetJob = { title: 'Software Developer', requiredSkills: ['JavaScript', 'React', 'Node.js'] };
 
-    if (getDBStatus()) {
-      candidateProfile = await CandidateProfile.findOne({ user: userId });
-      if (jobId) {
-        const foundJob = await Job.findById(jobId);
-        if (foundJob) targetJob = foundJob;
-      }
+    if (jobId) {
+      const foundJob = await Job.findById(jobId);
+      if (foundJob) targetJob = foundJob;
     }
 
     const profileForAI = candidateProfile || {
@@ -43,7 +36,7 @@ const startInterview = async (req, res, next) => {
       evaluation: null
     }));
 
-    const interviewData = {
+    const interview = await Interview.create({
       candidate: userId,
       candidateIdString: userId.toString(),
       job: jobId || null,
@@ -52,26 +45,13 @@ const startInterview = async (req, res, next) => {
       interviewType,
       difficulty,
       status: 'in_progress',
-      questions: questionsFormatted,
-      createdAt: new Date()
-    };
-
-    if (getDBStatus()) {
-      const interview = await Interview.create(interviewData);
-      return res.status(201).json({
-        success: true,
-        message: 'Mock interview session initialized. Questions dynamically generated.',
-        interview
-      });
-    }
-
-    interviewData.id = `int_${Date.now()}`;
-    inMemoryInterviews.set(interviewData.id, interviewData);
+      questions: questionsFormatted
+    });
 
     return res.status(201).json({
       success: true,
       message: 'Mock interview session initialized. Questions dynamically generated.',
-      interview: interviewData
+      interview
     });
   } catch (error) {
     next(error);
@@ -90,13 +70,7 @@ const submitAnswer = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Please provide questionId and responseText.' });
     }
 
-    let interview;
-    if (getDBStatus()) {
-      interview = await Interview.findById(id);
-    } else {
-      interview = inMemoryInterviews.get(id);
-    }
-
+    const interview = await Interview.findById(id);
     if (!interview) {
       return res.status(404).json({ success: false, message: 'Interview session not found.' });
     }
@@ -113,11 +87,7 @@ const submitAnswer = async (req, res, next) => {
     const evaluation = await aiService.evaluateInterviewResponse(targetQuestion, responseText);
     targetQuestion.evaluation = evaluation;
 
-    if (getDBStatus()) {
-      await interview.save();
-    } else {
-      inMemoryInterviews.set(id, interview);
-    }
+    await interview.save();
 
     return res.status(200).json({
       success: true,
@@ -135,13 +105,7 @@ const submitAnswer = async (req, res, next) => {
 const completeInterview = async (req, res, next) => {
   try {
     const { id } = req.params;
-
-    let interview;
-    if (getDBStatus()) {
-      interview = await Interview.findById(id);
-    } else {
-      interview = inMemoryInterviews.get(id);
-    }
+    const interview = await Interview.findById(id);
 
     if (!interview) {
       return res.status(404).json({ success: false, message: 'Interview session not found.' });
@@ -155,9 +119,9 @@ const completeInterview = async (req, res, next) => {
     let totalProblem = 0;
 
     evaluatedQuestions.forEach(q => {
-      totalTech += q.evaluation.technicalScore || 75;
-      totalComm += q.evaluation.communicationScore || 80;
-      totalProblem += q.evaluation.problemSolvingScore || 78;
+      totalTech += q.evaluation?.technicalScore || 75;
+      totalComm += q.evaluation?.communicationScore || 80;
+      totalProblem += q.evaluation?.problemSolvingScore || 78;
     });
 
     const technicalProficiency = Math.round(totalTech / count);
@@ -180,11 +144,7 @@ const completeInterview = async (req, res, next) => {
     interview.status = 'completed';
     interview.overallEvaluation = overallEvaluation;
 
-    if (getDBStatus()) {
-      await interview.save();
-    } else {
-      inMemoryInterviews.set(id, interview);
-    }
+    await interview.save();
 
     return res.status(200).json({
       success: true,
@@ -202,15 +162,12 @@ const completeInterview = async (req, res, next) => {
 const getInterviewById = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const interview = await Interview.findById(id);
 
-    if (getDBStatus()) {
-      const interview = await Interview.findById(id);
-      if (!interview) return res.status(404).json({ success: false, message: 'Interview session not found.' });
-      return res.status(200).json({ success: true, interview });
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview session not found.' });
     }
 
-    const interview = inMemoryInterviews.get(id);
-    if (!interview) return res.status(404).json({ success: false, message: 'Interview session not found.' });
     return res.status(200).json({ success: true, interview });
   } catch (error) {
     next(error);

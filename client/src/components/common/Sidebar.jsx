@@ -17,7 +17,8 @@ import {
   ShieldCheck,
   Zap,
   ChevronDown,
-  Bot
+  Bot,
+  BookmarkCheck
 } from 'lucide-react';
 
 function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange }) {
@@ -111,41 +112,47 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
                 </div>
               </button>
 
-              <button onClick={() => setActiveTab('profile')} className={getNavButtonClass('profile')}>
-                <div className="flex items-center gap-3">
-                  <User className="w-4 h-4" /> My Profile
-                </div>
-              </button>
-
-              <button onClick={() => setActiveTab('resume')} className={getNavButtonClass('resume')}>
-                <div className="flex items-center gap-3">
-                  <FileText className="w-4 h-4" /> Resume Parser IQ
-                </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-600 border border-indigo-100">AI</span>
-              </button>
-
-              <button onClick={() => setActiveTab('skills')} className={getNavButtonClass('skills')}>
-                <div className="flex items-center gap-3">
-                  <Brain className="w-4 h-4" /> Skill Matrix
-                </div>
-              </button>
-
               <button onClick={() => setActiveTab('jobs')} className={getNavButtonClass('jobs')}>
                 <div className="flex items-center gap-3">
                   <Briefcase className="w-4 h-4" /> Job Discovery
                 </div>
               </button>
 
-              <button onClick={() => setActiveTab('applications')} className={getNavButtonClass('applications')}>
+              <button onClick={() => setActiveTab('tracker')} className={getNavButtonClass('tracker')}>
                 <div className="flex items-center gap-3">
-                  <Layers className="w-4 h-4" /> Tracker
+                  <BookmarkCheck className="w-4 h-4" /> Tracker
                 </div>
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  3
+                </span>
+              </button>
+
+              <button onClick={() => setActiveTab('hr-interviews')} className={getNavButtonClass('hr-interviews')}>
+                <div className="flex items-center gap-3">
+                  <Award className="w-4 h-4 text-purple-600" /> Interview
+                </div>
+                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-purple-50 text-purple-700 border border-purple-100">
+                  2
+                </span>
+              </button>
+
+              <button onClick={() => setActiveTab('profile')} className={getNavButtonClass('profile')}>
+                <div className="flex items-center gap-3">
+                  <User className="w-4 h-4" /> My Profile
+                </div>
+              </button>
+
+              <button onClick={() => setActiveTab('profile-review')} className={getNavButtonClass('profile-review', true)}>
+                <div className="flex items-center gap-3">
+                  <Sparkles className="w-4 h-4 text-amber-400" /> Profile Review
+                </div>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">CORE</span>
               </button>
             </div>
 
             <div className="space-y-1 pt-3 border-t border-slate-100">
               <span className="px-3 text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3 text-indigo-500" /> AI Intelligence Studio
+                <Sparkles className="w-3 h-3 text-indigo-500" /> AI Practice Studio
               </span>
 
               <button onClick={() => setActiveTab('interview')} className={getNavButtonClass('interview', true)}>
@@ -155,20 +162,17 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
                 <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-white/20 text-white">LIVE</span>
               </button>
 
-              <button onClick={() => setActiveTab('interview-evaluation')} className={getNavButtonClass('interview-evaluation', true)}>
+              <button onClick={() => setActiveTab('interview-journey')} className={getNavButtonClass('interview-journey')}>
                 <div className="flex items-center gap-3">
-                  <Award className="w-4 h-4" /> Interview Evaluation
+                  <BookOpen className="w-4 h-4" /> My Interview Journey
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500 text-white">M11</span>
               </button>
 
-              <button onClick={() => setActiveTab('skill-gaps')} className={getNavButtonClass('skill-gaps', true)}>
+              <button onClick={() => setActiveTab('skills')} className={getNavButtonClass('skills')}>
                 <div className="flex items-center gap-3">
-                  <BookOpen className="w-4 h-4" /> Skill Gap Analysis
+                  <Brain className="w-4 h-4" /> Skill Matrix
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500 text-white">M12</span>
               </button>
-
             </div>
           </>
         )}

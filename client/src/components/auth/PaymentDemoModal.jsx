@@ -11,11 +11,11 @@ function PaymentDemoModal({ isOpen, user, onPaymentSuccess }) {
   const handlePay = () => {
     setProcessing(true);
     setTimeout(() => {
-      activateHrPayment(user.id || user.email);
+      const updated = activateHrPayment(user.id || user._id || user.email);
       setProcessing(false);
       setCompleted(true);
       setTimeout(() => {
-        if (onPaymentSuccess) onPaymentSuccess(user);
+        if (onPaymentSuccess) onPaymentSuccess(updated || user);
       }, 1000);
     }, 1200);
   };

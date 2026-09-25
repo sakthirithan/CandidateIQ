@@ -70,18 +70,6 @@ function LandingPage({
             ) : (
               <>
                 <button
-                  onClick={onLogin}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-700 hover:text-slate-950 hover:bg-slate-100 transition-all"
-                >
-                  Login
-                </button>
-                <button
-                  onClick={onRegister}
-                  className="px-4 py-2 rounded-xl text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 transition-all"
-                >
-                  Register
-                </button>
-                <button
                   onClick={onGetStarted}
                   className="btn-primary text-xs font-bold px-4 py-2.5 shadow-md shadow-indigo-500/10 flex items-center gap-2"
                 >

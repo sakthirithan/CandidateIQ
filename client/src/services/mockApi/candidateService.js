@@ -1,59 +1,116 @@
-import { mockCandidates } from '../../data/mockCandidates';
+import api from '../api';
 
-let candidateStore = [...mockCandidates];
+const mapProfileToCandidate = (profile) => {
+  if (!profile) return null;
+  const p = profile.personalInfo || {};
+  const user = profile.user || {};
+  
+  // Format skills as flat array or object as expected by UI components
+  const rawSkills = profile.skills || {};
+  let formattedSkills = [];
+  if (Array.isArray(rawSkills)) {
+    formattedSkills = rawSkills;
+  } else if (typeof rawSkills === 'object') {
+    formattedSkills = [
+      ...(rawSkills.technical || []).map(s => ({ name: s, category: 'Technical', level: 'Advanced' })),
+      ...(rawSkills.frameworks || []).map(s => ({ name: s, category: 'Frameworks', level: 'Advanced' })),
+      ...(rawSkills.databases || []).map(s => ({ name: s, category: 'Databases', level: 'Advanced' })),
+      ...(rawSkills.tools || []).map(s => ({ name: s, category: 'Tools', level: 'Advanced' })),
+      ...(rawSkills.soft || []).map(s => ({ name: s, category: 'Soft Skills', level: 'Competent' }))
+    ];
+  }
 
-export const mockCandidateService = {
+  const userId = profile.userIdString || profile.user?._id || profile.user || profile._id;
+
+  return {
+    id: userId,
+    _id: profile._id,
+    userId: userId,
+    name: p.name || user.name || 'Candidate Name',
+    email: p.email || user.email || '',
+    headline: p.headline || 'Software Professional',
+    phone: p.phone || '',
+    location: p.location || 'Remote',
+    profilePhoto: p.profilePhoto || '',
+    skills: formattedSkills,
+    skillsObject: profile.skills || {},
+    experiences: profile.experience || [],
+    experience: profile.experience || [],
+    education: profile.education || [],
+    projects: profile.projects || [],
+    certifications: profile.certifications || [],
+    skillAnalysis: profile.skillAnalysis || { totalSkills: formattedSkills.length, confidenceScore: 85, topSkills: [] },
+    atsScore: profile.atsScore || 85,
+    iqScore: profile.iqScore || 88,
+    createdAt: profile.createdAt
+  };
+};
+
+export const candidateService = {
+  // Get current logged-in candidate profile
+  getMyProfile: async () => {
+    try {
+      const response = await api.get('/candidates/profile');
+      if (response.data && response.data.profile) {
+        return mapProfileToCandidate(response.data.profile);
+      }
+      return null;
+    } catch (err) {
+      if (err.response && err.response.status === 404) {
+        return null;
+      }
+      console.error('[candidateService Error] Failed to fetch my profile:', err);
+      throw err;
+    }
+  },
+
+  // Get all candidate profiles (Recruiter/Admin view)
   getCandidates: async () => {
-    await new Promise((r) => setTimeout(r, 150));
-    return [...candidateStore];
+    try {
+      const response = await api.get('/candidates/profiles');
+      if (response.data && response.data.profiles) {
+        return response.data.profiles.map(mapProfileToCandidate);
+      }
+      return [];
+    } catch (err) {
+      console.error('[candidateService Error] Failed to fetch candidates:', err);
+      throw err;
+    }
   },
 
+  // Get candidate profile by user ID (Recruiter view)
   getCandidateById: async (id) => {
-    await new Promise((r) => setTimeout(r, 100));
-    return candidateStore.find((c) => c.id === id) || candidateStore[0];
+    try {
+      const response = await api.get(`/candidates/profile/${id}`);
+      if (response.data && response.data.profile) {
+        return mapProfileToCandidate(response.data.profile);
+      }
+      throw new Error('Candidate profile not found.');
+    } catch (err) {
+      console.error(`[candidateService Error] Failed to fetch candidate profile ${id}:`, err);
+      throw err;
+    }
   },
 
+  // Upsert profile data to backend MongoDB
+  saveProfile: async (profileData) => {
+    try {
+      const response = await api.post('/candidates/profile', profileData);
+      if (response.data && response.data.profile) {
+        return mapProfileToCandidate(response.data.profile);
+      }
+      throw new Error(response.data?.message || 'Failed to save profile.');
+    } catch (err) {
+      console.error('[candidateService Error] Failed to save candidate profile:', err);
+      throw err;
+    }
+  },
+
+  // Backward compatibility alias for updateCandidate
   updateCandidate: async (id, updatedData) => {
-    await new Promise((r) => setTimeout(r, 200));
-    candidateStore = candidateStore.map((c) =>
-      c.id === id ? { ...c, ...updatedData } : c
-    );
-    return candidateStore.find((c) => c.id === id);
-  },
-
-  addSkill: async (candidateId, newSkill) => {
-    await new Promise((r) => setTimeout(r, 150));
-    const cand = candidateStore.find((c) => c.id === candidateId);
-    if (cand) {
-      cand.skills.push(newSkill);
-    }
-    return cand;
-  },
-
-  deleteSkill: async (candidateId, skillName) => {
-    await new Promise((r) => setTimeout(r, 150));
-    const cand = candidateStore.find((c) => c.id === candidateId);
-    if (cand) {
-      cand.skills = cand.skills.filter((s) => s.name !== skillName);
-    }
-    return cand;
-  },
-
-  addExperience: async (candidateId, exp) => {
-    await new Promise((r) => setTimeout(r, 150));
-    const cand = candidateStore.find((c) => c.id === candidateId);
-    if (cand) {
-      cand.experiences.push({ ...exp, id: `exp_${Date.now()}` });
-    }
-    return cand;
-  },
-
-  deleteExperience: async (candidateId, expId) => {
-    await new Promise((r) => setTimeout(r, 150));
-    const cand = candidateStore.find((c) => c.id === candidateId);
-    if (cand) {
-      cand.experiences = cand.experiences.filter((e) => e.id !== expId);
-    }
-    return cand;
+    return candidateService.saveProfile(updatedData);
   }
 };
+
+export const mockCandidateService = candidateService;
+export default candidateService;

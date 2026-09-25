@@ -1,41 +1,121 @@
-import { mockJobs } from '../../data/mockJobs';
+import api from '../api';
 
-let jobsStore = [...mockJobs];
-
-export const mockJobService = {
+export const jobService = {
   getJobs: async () => {
-    await new Promise((r) => setTimeout(r, 150));
-    return [...jobsStore];
+    try {
+      const response = await api.get('/jobs');
+      if (response.data && response.data.jobs) {
+        // Map backend response structure cleanly for components
+        return response.data.jobs.map(item => {
+          const j = item.job || item;
+          const candidateState = item.candidateState || {};
+          return {
+            id: j._id || j.id,
+            _id: j._id || j.id,
+            title: j.title,
+            department: j.department || 'Engineering',
+            company: j.company || 'CandidateIQ Talent Partner',
+            location: j.location || 'Remote / Hybrid',
+            employmentType: j.employmentType || 'Full-time',
+            experienceLevel: j.experienceLevel || '1-3 Years',
+            description: j.description,
+            requiredSkills: j.requiredSkills || [],
+            preferredSkills: j.preferredSkills || [],
+            status: j.status || 'published',
+            applicantsCount: j.applicantsCount || 0,
+            isApplied: Boolean(candidateState.isApplied),
+            applicationId: candidateState.applicationId,
+            appliedAt: candidateState.appliedAt,
+            postedDate: j.createdAt ? new Date(j.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+          };
+        });
+      }
+      return [];
+    } catch (err) {
+      console.error('[jobService Error] Failed to fetch jobs from backend:', err);
+      throw err;
+    }
   },
 
   getJobById: async (id) => {
-    await new Promise((r) => setTimeout(r, 100));
-    return jobsStore.find((j) => j.id === id) || jobsStore[0];
+    try {
+      const response = await api.get(`/jobs/${id}`);
+      if (response.data && response.data.job) {
+        const j = response.data.job;
+        return {
+          id: j._id || j.id,
+          _id: j._id || j.id,
+          title: j.title,
+          department: j.department || 'Engineering',
+          company: j.company || 'CandidateIQ Talent Partner',
+          location: j.location || 'Remote / Hybrid',
+          employmentType: j.employmentType || 'Full-time',
+          experienceLevel: j.experienceLevel || '1-3 Years',
+          description: j.description,
+          requiredSkills: j.requiredSkills || [],
+          preferredSkills: j.preferredSkills || [],
+          status: j.status || 'published',
+          applicantsCount: j.applicantsCount || 0,
+          postedDate: j.createdAt ? new Date(j.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        };
+      }
+      throw new Error('Job not found.');
+    } catch (err) {
+      console.error(`[jobService Error] Failed to fetch job ${id}:`, err);
+      throw err;
+    }
   },
 
   createJob: async (jobData) => {
-    await new Promise((r) => setTimeout(r, 250));
-    const newJob = {
-      id: `job_${Date.now()}`,
-      postedDate: new Date().toISOString().split('T')[0],
-      status: 'Active',
-      applicantsCount: 0,
-      matchPercentage: 85,
-      ...jobData
-    };
-    jobsStore.unshift(newJob);
-    return newJob;
+    try {
+      const response = await api.post('/jobs', jobData);
+      if (response.data && response.data.job) {
+        const j = response.data.job;
+        return {
+          id: j._id || j.id,
+          _id: j._id || j.id,
+          title: j.title,
+          department: j.department || 'Engineering',
+          company: j.company || 'CandidateIQ Talent Partner',
+          location: j.location || 'Remote / Hybrid',
+          employmentType: j.employmentType || 'Full-time',
+          experienceLevel: j.experienceLevel || '1-3 Years',
+          description: j.description,
+          requiredSkills: j.requiredSkills || [],
+          preferredSkills: j.preferredSkills || [],
+          status: j.status || 'published',
+          applicantsCount: j.applicantsCount || 0,
+          postedDate: j.createdAt ? new Date(j.createdAt).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]
+        };
+      }
+      throw new Error(response.data?.message || 'Failed to create job.');
+    } catch (err) {
+      console.error('[jobService Error] Failed to create job:', err);
+      throw err;
+    }
   },
 
-  updateJob: async (id, updatedFields) => {
-    await new Promise((r) => setTimeout(r, 200));
-    jobsStore = jobsStore.map((j) => (j.id === id ? { ...j, ...updatedFields } : j));
-    return jobsStore.find((j) => j.id === id);
+  applyToJob: async (jobId) => {
+    try {
+      const response = await api.post(`/jobs/${jobId}/apply`);
+      return response.data;
+    } catch (err) {
+      console.error(`[jobService Error] Failed to apply to job ${jobId}:`, err);
+      throw err;
+    }
   },
 
-  deleteJob: async (id) => {
-    await new Promise((r) => setTimeout(r, 200));
-    jobsStore = jobsStore.filter((j) => j.id !== id);
-    return { success: true, id };
+  getJobApplicants: async (jobId) => {
+    try {
+      const response = await api.get(`/jobs/${jobId}/applicants`);
+      return response.data?.applicants || [];
+    } catch (err) {
+      console.error(`[jobService Error] Failed to fetch applicants for job ${jobId}:`, err);
+      throw err;
+    }
   }
 };
+
+// Export mockJobService alias for backwards compatibility with component imports
+export const mockJobService = jobService;
+export default jobService;

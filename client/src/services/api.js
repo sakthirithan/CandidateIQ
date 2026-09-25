@@ -19,4 +19,18 @@ api.interceptors.request.use(
   (error) => Promise.reject(error)
 );
 
+// Interceptor to handle global 401 Unauthorized responses
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response && error.response.status === 401) {
+      // Clear token and current user if authentication fails
+      localStorage.removeItem('token');
+      localStorage.removeItem('candidateiq_current_user');
+      localStorage.removeItem('candidateiq_session');
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;

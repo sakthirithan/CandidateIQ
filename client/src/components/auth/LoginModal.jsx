@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
-import { loginUser } from '../../utils/auth';
+import { loginUserApi } from '../../utils/auth';
 import { X, Lock, Mail, Eye, EyeOff, Sparkles, AlertCircle, User, Briefcase, ShieldCheck } from 'lucide-react';
 
-function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister }) {
+function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister, onSwitchToForgotPassword }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -11,7 +11,7 @@ function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister }) {
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     if (!email || !password) {
@@ -20,8 +20,8 @@ function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister }) {
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const res = loginUser(email, password);
+    try {
+      const res = await loginUserApi(email, password);
       setLoading(false);
       if (res.success) {
         onClose();
@@ -29,17 +29,24 @@ function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister }) {
       } else {
         setError(res.message || 'Invalid email or password.');
       }
-    }, 250);
+    } catch (err) {
+      setLoading(false);
+      setError('An error occurred during login. Please try again.');
+    }
   };
 
-  const handleQuickLogin = (demoEmail, demoPass) => {
+  const handleQuickLogin = async (demoEmail, demoPass) => {
     setEmail(demoEmail);
     setPassword(demoPass);
     setError('');
-    const res = loginUser(demoEmail, demoPass);
+    setLoading(true);
+    const res = await loginUserApi(demoEmail, demoPass);
+    setLoading(false);
     if (res.success) {
       onClose();
       if (onLoginSuccess) onLoginSuccess(res.user);
+    } else {
+      setError(res.message || 'Quick login failed.');
     }
   };
 
@@ -94,14 +101,14 @@ function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister }) {
           <div className="space-y-1">
             <label className="text-xs font-semibold text-slate-700">Email Address</label>
             <div className="relative">
-              <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              {/* <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-3" /> */}
               <input
                 type="email"
                 required
                 placeholder="name@company.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="input-saas pl-9 w-full text-xs"
+                className="input-saas pl-14 w-full text-xs"
               />
             </div>
           </div>
@@ -109,10 +116,19 @@ function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister }) {
           <div className="space-y-1">
             <div className="flex justify-between items-center">
               <label className="text-xs font-semibold text-slate-700">Password</label>
-              <span className="text-[11px] text-indigo-600 hover:underline cursor-pointer">Forgot?</span>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  if (onSwitchToForgotPassword) onSwitchToForgotPassword();
+                }}
+                className="text-[11px] text-indigo-600 font-semibold hover:underline cursor-pointer"
+              >
+                Forgot?
+              </button>
             </div>
             <div className="relative">
-              <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+              {/* <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-3" /> */}
               <input
                 type={showPassword ? 'text' : 'password'}
                 required

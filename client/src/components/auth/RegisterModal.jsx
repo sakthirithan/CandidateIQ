@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { registerUser } from '../../utils/auth';
+import { registerUserApi } from '../../utils/auth';
 import { X, User, Briefcase, Mail, Lock, AlertCircle, ArrowRight, ShieldCheck } from 'lucide-react';
 
 function RegisterModal({ isOpen, onClose, onRegisterSuccess, onRequireHrPayment, onSwitchToLogin }) {
@@ -20,12 +20,17 @@ function RegisterModal({ isOpen, onClose, onRegisterSuccess, onRequireHrPayment,
     setError('');
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
 
     if (!name || !email || !password || !confirmPassword) {
       setError('Please fill in all required fields.');
+      return;
+    }
+
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters long.');
       return;
     }
 
@@ -35,8 +40,8 @@ function RegisterModal({ isOpen, onClose, onRegisterSuccess, onRequireHrPayment,
     }
 
     setLoading(true);
-    setTimeout(() => {
-      const res = registerUser({
+    try {
+      const res = await registerUserApi({
         name,
         email,
         password,
@@ -46,7 +51,7 @@ function RegisterModal({ isOpen, onClose, onRegisterSuccess, onRequireHrPayment,
 
       if (res.success) {
         onClose();
-        if (selectedRole === 'hr') {
+        if (['hr', 'recruiter'].includes(selectedRole)) {
           if (onRequireHrPayment) onRequireHrPayment(res.user);
         } else {
           if (onRegisterSuccess) onRegisterSuccess(res.user);
@@ -54,7 +59,10 @@ function RegisterModal({ isOpen, onClose, onRegisterSuccess, onRequireHrPayment,
       } else {
         setError(res.message || 'Registration failed.');
       }
-    }, 250);
+    } catch (err) {
+      setLoading(false);
+      setError('An error occurred during registration.');
+    }
   };
 
   return (

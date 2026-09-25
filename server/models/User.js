@@ -14,7 +14,7 @@ const userSchema = new mongoose.Schema(
       unique: true,
       lowercase: true,
       trim: true,
-      match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, 'Please provide a valid email']
+      match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,})+$/, 'Please provide a valid email']
     },
     password: {
       type: String,
@@ -24,8 +24,17 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ['candidate', 'recruiter', 'admin'],
+      enum: ['candidate', 'hr', 'recruiter', 'admin'],
       default: 'candidate'
+    },
+    paymentStatus: {
+      type: String,
+      enum: ['pending', 'paid'],
+      default: 'pending'
+    },
+    activated: {
+      type: Boolean,
+      default: true
     }
   },
   { timestamps: true }

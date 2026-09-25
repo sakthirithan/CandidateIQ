@@ -7,9 +7,21 @@ export { default as InterviewEvaluationAnalytics } from './InterviewEvaluationAn
 export { default as InterviewResults } from './InterviewResults';
 
 export { default as JobDiscovery } from './JobDiscovery';
+export { default as JobDetailsView } from './JobDetailsView';
+export { default as JobTrackerView } from './JobTrackerView';
 export { default as JobMatchingView } from './JobMatchingView';
 export { default as MockInterviewRoom } from './MockInterviewRoom';
 export { default as ResumeIntelligence } from './ResumeIntelligence';
 export { default as ResumeUploader } from './ResumeUploader';
 export { default as SkillGapIntelligence } from './SkillGapIntelligence';
 export { default as SkillIntelligence } from './SkillIntelligence';
+export { default as ProfileEvidenceIntelligence } from './ProfileEvidenceIntelligence';
+export { default as InterviewJourney } from './InterviewJourney';
+export { default as ProfileReviewHub } from './ProfileReviewHub';
+export { default as InterviewReviewDetail } from './InterviewReviewDetail';
+export { default as DynamicInterviewReport } from './DynamicInterviewReport';
+export { default as InterviewComparisonModal } from './InterviewComparisonModal';
+export { default as ExternalFeedbackModal } from './ExternalFeedbackModal';
+export { default as InterviewComparisonPage } from './InterviewComparisonPage';
+export { default as CandidateHRInterviews } from './CandidateHRInterviews';
+export { default as JobInterviewRoom } from './JobInterviewRoom';

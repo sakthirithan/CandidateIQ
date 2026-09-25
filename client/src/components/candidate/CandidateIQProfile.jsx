@@ -1,10 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { mockCandidateService } from '../../services/mockApi/candidateService';
+import { evidenceIntelligenceService } from '../../services/mockApi/evidenceIntelligenceService';
 import { getCurrentUser } from '../../utils/auth';
+import ResumeParserIQModal from './ResumeParserIQModal';
+import { storageResumes } from '../../services/storage/storageService';
+import { calculateProfileCompleteness } from '../../services/mockApi/resumeParserService';
 import {
   User, Mail, Phone, MapPin, Briefcase, GraduationCap, Code, Award, Sparkles,
-  CheckCircle2, FileText, Download, ExternalLink, Plus, Edit2, Trash2, X, Globe, Trophy
+  CheckCircle2, FileText, Download, ExternalLink, Plus, Edit2, Trash2, X, Globe, Trophy, Star
 } from 'lucide-react';
 
 function CandidateIQProfile() {
@@ -12,41 +16,129 @@ function CandidateIQProfile() {
   const [loading, setLoading] = useState(true);
   const [activeModal, setActiveModal] = useState(null); // 'personal', 'education', 'experience', 'skill', 'project', 'certification', 'language', 'achievement'
   const [formData, setFormData] = useState({});
+  const [isParserModalOpen, setIsParserModalOpen] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // Handle applying parsed resume data to profile
+  const handleApplyParsedData = async (extractedData) => {
+    setCandidate((prev) => {
+      const updated = { ...prev };
+      if (extractedData.personalInfo) {
+        updated.name = extractedData.personalInfo.name || updated.name;
+        updated.headline = extractedData.personalInfo.headline || updated.headline;
+        updated.email = extractedData.personalInfo.email || updated.email;
+        updated.phone = extractedData.personalInfo.phone || updated.phone;
+        updated.location = extractedData.personalInfo.location || updated.location;
+      }
+      if (extractedData.skills) {
+        const existingNames = new Set((updated.skills || []).map((s) => (s.name || s).toLowerCase()));
+        const newSkills = extractedData.skills.filter((s) => !existingNames.has((s.name || s).toLowerCase()));
+        updated.skills = [...(updated.skills || []), ...newSkills];
+      }
+      if (extractedData.experiences) {
+        updated.experiences = [...extractedData.experiences, ...(updated.experiences || [])];
+      }
+      if (extractedData.education) {
+        updated.education = [...extractedData.education, ...(updated.education || [])];
+      }
+      if (extractedData.projects) {
+        updated.projects = [...extractedData.projects, ...(updated.projects || [])];
+      }
+      if (extractedData.certifications) {
+        updated.certifications = [...extractedData.certifications, ...(updated.certifications || [])];
+      }
+      if (extractedData.languages) {
+        updated.languages = [...extractedData.languages, ...(updated.languages || [])];
+      }
+      if (extractedData.achievements) {
+        updated.achievements = [...extractedData.achievements, ...(updated.achievements || [])];
+      }
+
+      mockCandidateService.updateCandidate(updated.id || 'cand_1', updated);
+      return updated;
+    });
+
+    // Create a new version snapshot for interview evidence matching
+    try {
+      const skillsPayload = (extractedData.skills || []).map(s => ({
+        name: s.name || s,
+        level: s.level || 'Advanced',
+        claimedExperience: '3 Years',
+        claimText: `Extracted from uploaded resume.`
+      }));
+      await evidenceIntelligenceService.createResumeVersion('cand_1', skillsPayload, 'Uploaded Resume Parser IQ');
+    } catch (e) {
+      console.warn('Snapshot creation error:', e);
+    }
+
+    setToastMessage('Resume information has been successfully parsed and saved into your dynamic profile snapshot.');
+    setTimeout(() => {
+      setToastMessage('');
+    }, 4500);
+  };
+
+  const [activeSnapshot, setActiveSnapshot] = useState(null);
+  const [resumesList, setResumesList] = useState([]);
 
   useEffect(() => {
     fetchProfile();
   }, []);
 
+  const loadResumes = (candId) => {
+    const list = storageResumes.getByCandidateId(candId);
+    setResumesList(list || []);
+  };
+
   const fetchProfile = async () => {
     try {
       setLoading(true);
-      const res = await api.get('/candidates/profile');
       const currentUser = getCurrentUser();
-      const prof = res.data.profile;
+      const candId = currentUser?.id || 'cand_1';
+      loadResumes(candId);
+
+      const snapshot = await evidenceIntelligenceService.getLatestResumeRecord(candId);
+      setActiveSnapshot(snapshot);
+      const res = await api.get('/candidates/profile').catch(() => null);
+      let prof = res?.data?.profile;
+      if (!prof) {
+        prof = await mockCandidateService.getCandidateById(candId);
+      }
       if (currentUser) {
         prof.name = currentUser.name || prof.name;
         prof.email = currentUser.email || prof.email;
       }
       setCandidate(prof);
     } catch (err) {
-      const mockCand = await mockCandidateService.getCandidateById('cand_1');
       const currentUser = getCurrentUser();
+      const candId = currentUser?.id || 'cand_1';
+      loadResumes(candId);
+      const mockCand = await mockCandidateService.getCandidateById(candId);
       setCandidate({
         ...mockCand,
         name: currentUser?.name || mockCand.name || 'Alex Johnson',
-        email: currentUser?.email || mockCand.email || 'alex.johnson@example.com',
-        achievements: mockCand.achievements || [
-          'Ranked Top 5% in Global Hackathon 2025',
-          'Author of popular open-source React UI utility package'
-        ],
-        languages: mockCand.languages || [
-          { language: 'English', proficiency: 'Full Professional' },
-          { language: 'Spanish', proficiency: 'Conversational' }
-        ]
+        email: currentUser?.email || mockCand.email || 'alex.johnson@example.com'
       });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSetPrimaryResume = (resumeId) => {
+    const currentUser = getCurrentUser();
+    const candId = currentUser?.id || 'cand_1';
+    const updated = storageResumes.setPrimary(resumeId, candId);
+    setResumesList([...updated]);
+    setToastMessage('Primary resume updated successfully.');
+    setTimeout(() => setToastMessage(''), 3000);
+  };
+
+  const handleDeleteResume = (resumeId) => {
+    storageResumes.deleteResume(resumeId);
+    const currentUser = getCurrentUser();
+    const candId = currentUser?.id || 'cand_1';
+    loadResumes(candId);
+    setToastMessage('Resume removed.');
+    setTimeout(() => setToastMessage(''), 3000);
   };
 
   // Section 1 & 2: Personal Information & Professional Headline Handlers
@@ -244,6 +336,17 @@ function CandidateIQProfile() {
 
   return (
     <div className="p-6 md:p-8 space-y-8 select-none max-w-6xl mx-auto">
+      {/* Toast Notification for Profile Updates */}
+      {toastMessage && (
+        <div className="fixed top-20 right-6 z-50 p-4 rounded-xl bg-slate-900 text-white border border-emerald-500/40 shadow-2xl flex items-center gap-3 text-xs animate-bounce">
+          <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+          <span className="font-semibold">{toastMessage}</span>
+          <button onClick={() => setToastMessage('')} className="text-slate-400 hover:text-white ml-2">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* 1 & 2. Personal Information & Professional Headline Banner */}
       <div className="saas-card p-6 md:p-8 border border-slate-200/90 flex flex-wrap justify-between items-center gap-6 bg-white relative overflow-hidden shadow-sm">
         <div className="flex items-center gap-5">
@@ -267,16 +370,125 @@ function CandidateIQProfile() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsParserModalOpen(true)}
+            className="btn-ai text-xs flex items-center gap-1.5 shadow-md hover:shadow-indigo-500/20"
+            title="Import profile info from your resume"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> Resume Parser IQ
+          </button>
           <button onClick={openEditPersonalModal} className="btn-secondary text-xs flex items-center gap-1.5">
             <Edit2 className="w-3.5 h-3.5 text-indigo-600" /> Edit Profile
           </button>
-          <button onClick={() => setActiveModal('skill')} className="btn-ai text-xs flex items-center gap-1.5">
-            <Plus className="w-3.5 h-3.5" /> Add Skill
+          <button onClick={() => setActiveModal('skill')} className="btn-secondary text-xs flex items-center gap-1.5">
+            <Plus className="w-3.5 h-3.5 text-indigo-600" /> Add Skill
           </button>
         </div>
       </div>
 
-      {/* Grid Layout for Profile Sections */}
+      {/* Profile Completeness & Multiple Resumes Hub */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Profile Completeness Score Card */}
+        <div className="saas-card p-6 border border-slate-200/90 bg-white space-y-3 rounded-2xl shadow-sm">
+          <div className="flex justify-between items-center">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block font-outfit">Profile Completeness</span>
+            <span className="text-lg font-black font-outfit text-indigo-600 font-mono">
+              {calculateProfileCompleteness(candidate)}%
+            </span>
+          </div>
+
+          <div className="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+            <div
+              className="bg-gradient-to-r from-indigo-600 to-emerald-500 h-full transition-all duration-500"
+              style={{ width: `${calculateProfileCompleteness(candidate)}%` }}
+            ></div>
+          </div>
+
+          <p className="text-[11px] text-slate-500 font-medium">
+            {calculateProfileCompleteness(candidate) >= 90
+              ? '✓ Excellent! Your profile has sufficient intelligence for high-match job scoring.'
+              : 'Complete your skills, education, and resume to reach 100% profile strength.'}
+          </p>
+        </div>
+
+        {/* Resumes Versioning Hub (2 Columns wide) */}
+        <div className="md:col-span-2 saas-card p-6 border border-slate-200/90 bg-white space-y-4 rounded-2xl shadow-sm">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+            <div className="flex items-center gap-2">
+              <FileText className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-xs font-bold font-outfit text-slate-950 uppercase tracking-wider">
+                My Uploaded Resumes ({resumesList.length})
+              </h3>
+            </div>
+            <button
+              onClick={() => setIsParserModalOpen(true)}
+              className="btn-ai text-xs px-3 py-1.5 font-bold flex items-center gap-1.5"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" /> Upload New Resume
+            </button>
+          </div>
+
+          {resumesList.length === 0 ? (
+            <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/60 text-xs text-slate-500 flex justify-between items-center">
+              <span>No resume uploaded yet. Parse your resume to build candidate intelligence.</span>
+              <button
+                onClick={() => setIsParserModalOpen(true)}
+                className="btn-primary text-xs px-3 py-1"
+              >
+                Upload Resume
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1 text-xs">
+              {resumesList.map((res) => (
+                <div
+                  key={res.id || res.resumeId}
+                  className={`p-3 rounded-xl border flex flex-wrap items-center justify-between gap-3 transition-all ${
+                    res.isPrimary ? 'bg-indigo-50/50 border-indigo-200' : 'bg-slate-50/50 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-indigo-600 text-white font-black font-mono flex items-center justify-center text-[10px] shrink-0">
+                      v{res.version || 1}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900 truncate">{res.filename}</span>
+                        {res.isPrimary && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1">
+                            <Star className="w-2.5 h-2.5 text-emerald-600 fill-emerald-600" /> Primary
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[11px] text-slate-500 font-medium block">
+                        ATS Score: {res.atsScore || 85}/100 &bull; Uploaded {new Date(res.uploadedAt || Date.now()).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!res.isPrimary && (
+                      <button
+                        onClick={() => handleSetPrimaryResume(res.id || res.resumeId)}
+                        className="btn-secondary text-[11px] px-2.5 py-1 font-semibold"
+                      >
+                        Set Primary
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteResume(res.id || res.resumeId)}
+                      className="p-1 text-slate-400 hover:text-rose-600 transition-colors"
+                      title="Delete Resume Version"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column: Skills, Projects, Certifications & Languages */}
         <div className="space-y-6">
@@ -891,6 +1103,14 @@ function CandidateIQProfile() {
           </div>
         </div>
       )}
+
+      {/* Resume Parser IQ Upload Modal */}
+      <ResumeParserIQModal
+        isOpen={isParserModalOpen}
+        onClose={() => setIsParserModalOpen(false)}
+        currentProfile={candidate}
+        onApplyData={handleApplyParsedData}
+      />
     </div>
   );
 }

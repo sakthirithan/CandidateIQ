@@ -1,3 +1,5 @@
+import api from '../services/api';
+
 const USERS_KEY = 'candidateiq_users';
 const CURRENT_USER_KEY = 'candidateiq_current_user';
 const SESSION_KEY = 'candidateiq_session';
@@ -80,38 +82,68 @@ export const loginUser = (email, password) => {
     return { success: false, message: 'Invalid email or password.' };
   }
 
+  // Create mock token for offline fallback
+  const mockToken = `mock_jwt_token_${foundUser.id}_${Date.now()}`;
+  localStorage.setItem('token', mockToken);
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(foundUser));
   localStorage.setItem(SESSION_KEY, `session_${Date.now()}`);
-  return { success: true, user: foundUser };
+  return { success: true, user: foundUser, token: mockToken };
 };
 
-export const registerUser = ({ name, email, password, role }) => {
-  const users = getUsers();
-  const existing = users.find(
-    (u) => u.email.toLowerCase() === email.trim().toLowerCase()
-  );
-
-  if (existing) {
-    return { success: false, message: 'An account with this email already exists.' };
+export const loginUserApi = async (email, password) => {
+  try {
+    const response = await api.post('/auth/login', { email, password });
+    if (response.data && response.data.success) {
+      const { token, user } = response.data;
+      if (token) localStorage.setItem('token', token);
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+      localStorage.setItem(SESSION_KEY, `session_${Date.now()}`);
+      return { success: true, user, token };
+    }
+    return { success: false, message: response.data?.message || 'Login failed.' };
+  } catch (err) {
+    return {
+      success: false,
+      message: err.response?.data?.message || 'Invalid email or password.'
+    };
   }
+};
 
-  const newUser = {
-    id: `usr_${Date.now()}`,
-    name: name.trim(),
-    email: email.trim().toLowerCase(),
-    password,
-    role: role || 'candidate',
-    paymentStatus: role === 'hr' ? 'pending' : 'paid',
-    activated: role !== 'hr',
-    createdAt: new Date().toISOString()
-  };
+export const registerUserApi = async ({ name, email, password, role }) => {
+  try {
+    const response = await api.post('/auth/register', { name, email, password, role });
+    if (response.data && response.data.success) {
+      const { token, user } = response.data;
+      if (token) localStorage.setItem('token', token);
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(user));
+      localStorage.setItem(SESSION_KEY, `session_${Date.now()}`);
+      return { success: true, user, token };
+    }
+    return { success: false, message: response.data?.message || 'Registration failed.' };
+  } catch (err) {
+    return {
+      success: false,
+      message: err.response?.data?.message || 'Registration failed.'
+    };
+  }
+};
 
-  users.push(newUser);
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-  localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(newUser));
-  localStorage.setItem(SESSION_KEY, `session_${Date.now()}`);
+export const restoreSession = async () => {
+  const token = localStorage.getItem('token');
+  if (!token) return null;
 
-  return { success: true, user: newUser };
+  try {
+    const res = await api.get('/auth/me');
+    if (res.data && res.data.success && res.data.user) {
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(res.data.user));
+      return res.data.user;
+    }
+  } catch (e) {
+    // Clear session if backend authentication check fails
+    logoutUser();
+    return null;
+  }
+  return getCurrentUser();
 };
 
 export const activateHrPayment = (userId) => {
@@ -119,7 +151,7 @@ export const activateHrPayment = (userId) => {
   let updatedUser = null;
 
   const updatedUsers = users.map((u) => {
-    if (u.id === userId || u.email === userId) {
+    if (u.id === userId || u._id === userId || u.email === userId) {
       updatedUser = { ...u, paymentStatus: 'paid', activated: true };
       return updatedUser;
     }
@@ -129,6 +161,12 @@ export const activateHrPayment = (userId) => {
   if (updatedUser) {
     localStorage.setItem(USERS_KEY, JSON.stringify(updatedUsers));
     localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+  } else {
+    const currentUser = getCurrentUser();
+    if (currentUser) {
+      updatedUser = { ...currentUser, paymentStatus: 'paid', activated: true };
+      localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
+    }
   }
 
   return updatedUser;
@@ -141,7 +179,7 @@ export const updateUser = (updatedFields) => {
   const users = getUsers();
   const updatedUser = { ...currentUser, ...updatedFields };
 
-  const newUsers = users.map((u) => (u.id === currentUser.id ? updatedUser : u));
+  const newUsers = users.map((u) => (u.id === currentUser.id || u._id === currentUser.id ? updatedUser : u));
 
   localStorage.setItem(USERS_KEY, JSON.stringify(newUsers));
   localStorage.setItem(CURRENT_USER_KEY, JSON.stringify(updatedUser));
@@ -149,7 +187,38 @@ export const updateUser = (updatedFields) => {
   return updatedUser;
 };
 
+export const forgotPasswordApi = async (email) => {
+  try {
+    const response = await api.post('/auth/forgot-password', { email });
+    if (response.data && response.data.success) {
+      return { success: true, message: response.data.message };
+    }
+    return { success: false, message: response.data?.message || 'Verification failed.' };
+  } catch (err) {
+    return {
+      success: false,
+      message: err.response?.data?.message || 'Account not found with this email.'
+    };
+  }
+};
+
+export const resetPasswordApi = async (email, newPassword) => {
+  try {
+    const response = await api.post('/auth/reset-password', { email, newPassword });
+    if (response.data && response.data.success) {
+      return { success: true, message: response.data.message };
+    }
+    return { success: false, message: response.data?.message || 'Password reset failed.' };
+  } catch (err) {
+    return {
+      success: false,
+      message: err.response?.data?.message || 'Password reset failed.'
+    };
+  }
+};
+
 export const logoutUser = () => {
+  localStorage.removeItem('token');
   localStorage.removeItem(CURRENT_USER_KEY);
   localStorage.removeItem(SESSION_KEY);
 };
