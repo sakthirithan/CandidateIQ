@@ -16,7 +16,7 @@ const interviewSchema = new mongoose.Schema(
     jobTitle: String,
     interviewType: {
       type: String,
-      enum: ['technical', 'behavioural', 'mixed'],
+      enum: ['technical', 'behavioural', 'mixed', 'hr'],
       default: 'mixed'
     },
     difficulty: {
@@ -26,9 +26,11 @@ const interviewSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ['in_progress', 'completed'],
+      enum: ['scheduled', 'in_progress', 'completed', 'cancelled'],
       default: 'in_progress'
     },
+    scheduledDate: Date,
+    notes: String,
     questions: [
       {
         questionId: Number,

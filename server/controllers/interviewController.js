@@ -1,6 +1,7 @@
 const Interview = require('../models/Interview');
 const CandidateProfile = require('../models/CandidateProfile');
 const Job = require('../models/Job');
+const Application = require('../models/Application');
 const aiService = require('../services/aiService');
 
 // @desc    Start a dynamic mock interview session
@@ -53,6 +54,82 @@ const startInterview = async (req, res, next) => {
       message: 'Mock interview session initialized. Questions dynamically generated.',
       interview
     });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Schedule an HR/Technical Interview by Recruiter
+// @route   POST /api/interviews/schedule
+// @access  Private (Recruiter/Admin)
+const scheduleInterview = async (req, res, next) => {
+  try {
+    const { candidateId, jobId, scheduledDate, interviewType = 'hr', notes } = req.body;
+
+    if (!candidateId || !jobId) {
+      return res.status(400).json({ success: false, message: 'Candidate ID and Job ID are required.' });
+    }
+
+    const job = await Job.findById(jobId);
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job posting not found.' });
+    }
+
+    const interview = await Interview.create({
+      candidate: candidateId,
+      candidateIdString: candidateId.toString(),
+      job: jobId,
+      jobIdString: jobId.toString(),
+      jobTitle: job.title,
+      interviewType: ['technical', 'behavioural', 'mixed', 'hr'].includes(interviewType) ? interviewType : 'hr',
+      difficulty: 'Mid-Level',
+      status: 'scheduled',
+      scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(Date.now() + 86400000 * 2),
+      notes: notes || 'HR Candidate Screening Interview'
+    });
+
+    // Automatically update Application status to interview_scheduled if application exists
+    await Application.findOneAndUpdate(
+      { candidate: candidateId, job: jobId },
+      { status: 'interview_scheduled' }
+    );
+
+    const populatedInterview = await Interview.findById(interview._id)
+      .populate('candidate', 'name email role')
+      .populate('job', 'title department location');
+
+    return res.status(201).json({
+      success: true,
+      message: 'HR Interview scheduled successfully.',
+      interview: populatedInterview
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get all scheduled interviews for Recruiter
+// @route   GET /api/interviews/recruiter
+// @access  Private (Recruiter/Admin)
+const getRecruiterInterviews = async (req, res, next) => {
+  try {
+    const recruiterId = req.user.id || req.user._id;
+    const isSystemAdmin = req.user.role === 'admin';
+
+    let jobIds = [];
+    if (!isSystemAdmin) {
+      const recruiterJobs = await Job.find({ recruiter: recruiterId }).select('_id');
+      jobIds = recruiterJobs.map(j => j._id);
+    }
+
+    const query = isSystemAdmin ? {} : { job: { $in: jobIds } };
+
+    const interviews = await Interview.find(query)
+      .populate('candidate', 'name email role')
+      .populate('job', 'title department location')
+      .sort({ scheduledDate: 1, createdAt: -1 });
+
+    return res.status(200).json({ success: true, count: interviews.length, interviews });
   } catch (error) {
     next(error);
   }
@@ -162,7 +239,9 @@ const completeInterview = async (req, res, next) => {
 const getInterviewById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const interview = await Interview.findById(id);
+    const interview = await Interview.findById(id)
+      .populate('candidate', 'name email role')
+      .populate('job', 'title department location');
 
     if (!interview) {
       return res.status(404).json({ success: false, message: 'Interview session not found.' });
@@ -174,4 +253,11 @@ const getInterviewById = async (req, res, next) => {
   }
 };
 
-module.exports = { startInterview, submitAnswer, completeInterview, getInterviewById };
+module.exports = {
+  startInterview,
+  scheduleInterview,
+  getRecruiterInterviews,
+  submitAnswer,
+  completeInterview,
+  getInterviewById
+};

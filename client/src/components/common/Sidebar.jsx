@@ -184,25 +184,23 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
 
               <button onClick={() => setActiveTab('recruiter-dashboard')} className={getNavButtonClass('recruiter-dashboard')}>
                 <div className="flex items-center gap-3">
-                  <LayoutDashboard className="w-4 h-4" /> Talent Command Center
+                  <LayoutDashboard className="w-4 h-4" /> Dashboard
                 </div>
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M14</span>
               </button>
 
-
               <button onClick={() => setActiveTab('jobs-recruiter')} className={getNavButtonClass('jobs-recruiter')}>
                 <div className="flex items-center gap-3">
-                  <Briefcase className="w-4 h-4" /> Active Requisitions
+                  <Briefcase className="w-4 h-4" /> Jobs
                 </div>
               </button>
 
               <button onClick={() => setActiveTab('candidates-recruiter')} className={getNavButtonClass('candidates-recruiter')}>
                 <div className="flex items-center gap-3">
-                  <Users className="w-4 h-4" /> Candidate Pool
+                  <Users className="w-4 h-4" /> Candidates & Applications
                 </div>
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M15</span>
               </button>
-
             </div>
 
             <div className="space-y-1 pt-3 border-t border-slate-100">
@@ -217,7 +215,6 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M13</span>
               </button>
 
-
               <button onClick={() => setActiveTab('interview-evaluation')} className={getNavButtonClass('interview-evaluation', true)}>
                 <div className="flex items-center gap-3">
                   <Award className="w-4 h-4" /> Interview Analytics
@@ -227,19 +224,18 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
 
               <button onClick={() => setActiveTab('comparison')} className={getNavButtonClass('comparison', true)}>
                 <div className="flex items-center gap-3">
-                  <BarChart3 className="w-4 h-4" /> Candidate Comparison
+                  <BarChart3 className="w-4 h-4" /> Compare Candidates
                 </div>
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500 text-white">M16</span>
               </button>
 
               <button onClick={() => setActiveTab('assistant')} className={getNavButtonClass('assistant', true)}>
                 <div className="flex items-center gap-3">
-                  <Sparkles className="w-4 h-4" /> AI Recruitment Assistant
+                  <Sparkles className="w-4 h-4" /> AI Assistant
                 </div>
                 <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M17</span>
               </button>
             </div>
-
           </>
         )}
 
