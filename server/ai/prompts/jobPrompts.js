@@ -75,6 +75,32 @@ Return ONLY valid JSON:
   "recommendations": ["string"],
   "explanation": "string"
 }
+`,
+
+  extractJobKeywords: (jobData) => `
+Analyze ALL provided job information:
+- Job Title: "${jobData.title}"
+- Job Description: "${jobData.description}"
+- Required Skills: ${JSON.stringify(jobData.requiredSkills || [])}
+- Preferred Skills: ${JSON.stringify(jobData.preferredSkills || [])}
+- Experience & Education: "${jobData.experienceLevel || ''} / ${jobData.education || ''}"
+
+Extract meaningful technical, architectural, domain, and implementation keywords SEMANTICALLY from the complete job information:
+- Job Title, Description Narrative, About Paragraphs, Required Skills, and Preferred Skills.
+
+Do NOT restrict keyword extraction to explicit requiredSkills/preferredSkills fields only. Extract technical concepts (e.g. "Full Stack Development", "API Development", "Cloud Deployment", "Authentication") as well.
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "keywords": [
+    "React",
+    "Node.js",
+    "MongoDB",
+    "Docker",
+    "AWS",
+    "REST API"
+  ]
+}
 `
 };
 

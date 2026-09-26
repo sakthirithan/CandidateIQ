@@ -3,7 +3,8 @@ const jobPrompts = require('../prompts/jobPrompts');
 const {
   JobDescriptionAnalysisSchema,
   JobMatchSchema,
-  ATSAnalysisSchema
+  ATSAnalysisSchema,
+  JobKeywordExtractionSchema
 } = require('../schemas/jobSchemas');
 const fallbackProvider = require('../providers/fallbackProvider');
 
@@ -19,6 +20,18 @@ class JobAIService {
       schema: JobDescriptionAnalysisSchema,
       fallbackFn: () => fallbackProvider.fallbackJobAnalysis(jdText),
       metadata: { textLength: jdText ? jdText.length : 0 }
+    });
+  }
+
+  async extractJobKeywords(jobData) {
+    return aiOrchestrator.executeOperation({
+      operation: 'job_keyword_extraction',
+      prompt: jobPrompts.extractJobKeywords(jobData),
+      schema: JobKeywordExtractionSchema,
+      fallbackFn: () => fallbackProvider.fallbackJobKeywords(
+        jobData.title, jobData.description, jobData.requiredSkills, jobData.preferredSkills
+      ),
+      metadata: { title: jobData.title || '' }
     });
   }
 

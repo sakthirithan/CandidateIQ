@@ -95,13 +95,7 @@ function ApplicationTracker() {
     );
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="p-6 md:p-8 space-y-8 select-none max-w-6xl mx-auto">
@@ -133,7 +127,13 @@ function ApplicationTracker() {
 
       {/* Applications List */}
       <div className="space-y-6">
-        {applications.map((app) => {
+        {loading && applications.length === 0 ? (
+          <div className="saas-card p-12 text-center border border-slate-200/90 bg-white">
+            <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-xs font-bold text-slate-500 mt-3 font-outfit">Loading Application Pipeline...</p>
+          </div>
+        ) : (
+          applications.map((app) => {
           const stepIndex = getStepIndex(app.status);
           const isRejected = stepIndex === -1;
 
@@ -219,9 +219,10 @@ function ApplicationTracker() {
               </div>
             </div>
           );
-        })}
+        })
+      )}
 
-        {applications.length === 0 && (
+        {!loading && applications.length === 0 && (
           <div className="saas-card p-12 text-center bg-white border border-slate-200/80 space-y-2 text-slate-500 text-xs">
             <Layers className="w-8 h-8 text-slate-300 mx-auto" />
             <p className="font-bold text-slate-700 font-outfit text-sm">No Active Applications Found</p>

@@ -118,14 +118,6 @@ function JobDiscovery({ onSelectJob }) {
     return 0;
   });
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-16">
-        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 md:p-8 space-y-6 select-none max-w-6xl mx-auto">
       {/* Toast Alert */}

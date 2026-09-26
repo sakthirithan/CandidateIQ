@@ -11,7 +11,9 @@ const {
   applyToJob,
   getJobApplicants,
   getRecruiterApplications,
-  updateApplicationStatus
+  updateApplicationStatus,
+  saveHREvaluationPrompt,
+  getJobKeywords
 } = require('../controllers/jobController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -20,6 +22,8 @@ router.get('/candidate/my-applications', protect, authorize('candidate'), getCan
 router.get('/recruiter/my-jobs', protect, authorize('hr', 'recruiter', 'admin'), getRecruiterJobs);
 router.get('/recruiter/applications', protect, authorize('hr', 'recruiter', 'admin'), getRecruiterApplications);
 router.get('/:id', getJobById);
+router.get('/:id/keywords', getJobKeywords);
+router.patch('/:id/hr-prompt', protect, authorize('hr', 'recruiter', 'admin'), saveHREvaluationPrompt);
 router.post('/', protect, authorize('hr', 'recruiter', 'admin'), createJob);
 router.patch('/:id', protect, authorize('hr', 'recruiter', 'admin'), updateJob);
 router.delete('/:id', protect, authorize('hr', 'recruiter', 'admin'), deleteJob);

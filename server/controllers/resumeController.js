@@ -2,6 +2,7 @@ const pdfParse = require('pdf-parse');
 const Resume = require('../models/Resume');
 const CandidateProfile = require('../models/CandidateProfile');
 const resumeAIService = require('../ai/services/resumeAIService');
+const { normalizeKeywords } = require('../utils/keywordNormalizer');
 const { computeSkillAnalytics } = require('./profileController');
 
 // @desc    Upload resume, validate, parse full document, and generate dynamic section preview
@@ -268,13 +269,70 @@ const confirmResumeSections = async (req, res, next) => {
 
     await profile.save();
 
+    // RESUME KEYWORD EXTRACTION & OVERWRITE FOR CONFIRMED RESUME
+    const resumeTextToAnalyze = resumeRecord?.rawText || JSON.stringify(profile.skills) + ' ' + JSON.stringify(profile.experience);
+    const keywordAiRes = await resumeAIService.extractResumeKeywords(resumeTextToAnalyze);
+    const rawKeywords = keywordAiRes?.result?.keywords || keywordAiRes?.keywords || [];
+    const normalizedKeywords = normalizeKeywords(rawKeywords);
+
+    // Save normalized keyword array directly into Resume document
+    const activeResumeId = resumeRecord?._id || profile.resumeReference?.resumeId;
+    let targetResume = resumeRecord;
+    if (!targetResume && activeResumeId) {
+      targetResume = await Resume.findById(activeResumeId);
+    }
+    if (!targetResume) {
+      targetResume = await Resume.findOne({ candidate: userId }).sort({ createdAt: -1 });
+    }
+
+    if (targetResume) {
+      targetResume.keywords = normalizedKeywords;
+      await targetResume.save();
+    }
+
     return res.status(200).json({
-      operation: 'resume_confirm',
+      operation: 'resume_keyword_extraction',
       status: 'success',
       success: true,
-      message: 'Resume data successfully updated into candidate profile.',
+      message: 'Resume data and keywords successfully updated into candidate profile.',
       profile,
-      candidate: profile
+      candidate: profile,
+      result: {
+        candidateId: userId.toString(),
+        resumeId: targetResume?._id?.toString() || '',
+        keywords: normalizedKeywords
+      },
+      keywords: normalizedKeywords
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get candidate's confirmed resume keywords
+// @route   GET /api/resumes/keywords
+// @access  Private (Candidate)
+const getCandidateResumeKeywords = async (req, res, next) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    let resume = await Resume.findOne({ candidate: userId, extractionStatus: 'confirmed' }).sort({ updatedAt: -1 });
+    if (!resume) {
+      resume = await Resume.findOne({ candidate: userId }).sort({ updatedAt: -1 });
+    }
+
+    const keywords = resume?.keywords || [];
+
+    return res.status(200).json({
+      operation: 'resume_keyword_retrieval',
+      status: 'success',
+      success: true,
+      count: keywords.length,
+      result: {
+        candidateId: userId.toString(),
+        resumeId: resume?._id?.toString() || '',
+        keywords
+      },
+      keywords
     });
   } catch (error) {
     next(error);
@@ -284,5 +342,6 @@ const confirmResumeSections = async (req, res, next) => {
 module.exports = {
   uploadAndParseResume,
   getResumeStatus,
-  confirmResumeSections
+  confirmResumeSections,
+  getCandidateResumeKeywords
 };

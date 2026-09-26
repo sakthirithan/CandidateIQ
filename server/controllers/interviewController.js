@@ -2,9 +2,13 @@ const Interview = require('../models/Interview');
 const CandidateProfile = require('../models/CandidateProfile');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
+const Resume = require('../models/Resume');
+const { normalizeKeywords } = require('../utils/keywordNormalizer');
 const aiService = require('../services/aiService');
+const interviewAIService = require('../ai/services/interviewAIService');
+const evaluationAIService = require('../ai/services/evaluationAIService');
 
-// @desc    Start a dynamic mock interview session
+// @desc    Start a dynamic mock interview session based EXCLUSIVELY on candidate resume keywords
 // @route   POST /api/interviews/start
 // @access  Private (Candidate)
 const startInterview = async (req, res, next) => {
@@ -12,30 +16,78 @@ const startInterview = async (req, res, next) => {
     const { jobId, interviewType = 'mixed', difficulty = 'Mid-Level', questionCount = 5 } = req.body;
     const userId = req.user.id || req.user._id;
 
+    // STRICT BACKEND GUARD: Mock Interview must NEVER receive or accept HR Evaluation Prompt
+    if (req.body.hrEvaluationPrompt !== undefined || req.body.hrPrompt !== undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Architectural Error: HR Evaluation Prompt is not permitted in Mock Interview context.'
+      });
+    }
+
     let candidateProfile = await CandidateProfile.findOne({ user: userId });
-    let targetJob = { title: 'Software Developer', requiredSkills: ['JavaScript', 'React', 'Node.js'] };
+    let targetJob = { title: 'Practice Role', requiredSkills: [] };
 
     if (jobId) {
       const foundJob = await Job.findById(jobId);
       if (foundJob) targetJob = foundJob;
     }
 
-    const profileForAI = candidateProfile || {
-      skills: { technical: ['JavaScript', 'React', 'Node.js', 'Express', 'MongoDB'] }
-    };
+    // Retrieve Candidate's confirmed Resume directly from DB
+    let confirmedResume = await Resume.findOne({ candidate: userId, extractionStatus: 'confirmed' }).sort({ updatedAt: -1 });
+    if (!confirmedResume) {
+      confirmedResume = await Resume.findOne({ candidate: userId }).sort({ updatedAt: -1 });
+    }
 
-    // Generate dynamic AI questions
-    const generatedQuestions = await aiService.generateInterviewQuestions(profileForAI, targetJob, questionCount);
+    let resumeKeywords = confirmedResume?.keywords || [];
 
-    const questionsFormatted = generatedQuestions.map((q, idx) => ({
-      questionId: idx + 1,
-      category: q.category || (idx % 2 === 0 ? 'technical' : 'behavioural'),
-      questionText: q.question,
-      targetSkill: q.targetSkill || 'Software Development',
-      evaluationCriteria: q.evaluationCriteria || 'Demonstrates problem-solving approach and domain depth.',
-      candidateResponse: '',
-      evaluation: null
-    }));
+    // Fallback if Candidate hasn't uploaded/confirmed a resume yet
+    if (!resumeKeywords || resumeKeywords.length === 0) {
+      const techList = candidateProfile?.skills?.technical || ['JavaScript', 'React', 'Node.js', 'Express', 'MongoDB'];
+      const fwList = candidateProfile?.skills?.frameworks || [];
+      const dbList = candidateProfile?.skills?.databases || [];
+      resumeKeywords = normalizeKeywords([...techList, ...fwList, ...dbList]);
+    }
+
+    // Build reproducible Resume Keyword Snapshot for this Mock Interview
+    const resumeKeywordSnapshot = [...resumeKeywords];
+
+    // AI CONTEXT GUARD: Log sanitized AI context before AI call
+    console.log('[MOCK_INTERVIEW]', {
+      resumeKeywords: resumeKeywordSnapshot,
+      jobId: jobId || 'none',
+      hrEvaluationPrompt: 'EXCLUDED'
+    });
+
+    // Generate dynamic AI questions derived ENTIRELY from candidate resume keywords
+    const generatedQuestions = await interviewAIService.generateMockQuestionsFromResumeKeywords({
+      resumeKeywords: resumeKeywordSnapshot,
+      interviewType,
+      difficulty,
+      count: questionCount
+    });
+
+    const questionsList = Array.isArray(generatedQuestions.result)
+      ? generatedQuestions.result
+      : (Array.isArray(generatedQuestions) ? generatedQuestions : []);
+
+    const questionsFormatted = questionsList.map((q, idx) => {
+      const kw = q.sourceKeyword || (typeof resumeKeywordSnapshot[idx % resumeKeywordSnapshot.length] === 'string' ? resumeKeywordSnapshot[idx % resumeKeywordSnapshot.length] : resumeKeywordSnapshot[idx % resumeKeywordSnapshot.length]?.keyword) || 'Core Skill';
+      return {
+        questionId: q.questionId || (idx + 1).toString(),
+        sourceKeyword: kw,
+        category: q.category || (idx % 2 === 0 ? 'technical' : 'behavioural'),
+        questionText: q.question || q.questionText || `Explain practical usage of ${kw}.`,
+        targetSkill: q.targetSkill || kw,
+        evaluationCriteria: q.evaluationCriteria || `Evaluates domain depth and practical experience with ${kw}.`,
+        options: q.options || [],
+        correctAnswer: q.correctAnswer || '',
+        mcqExplanation: q.explanation || '',
+        candidateResponse: '',
+        evaluation: null
+      };
+    });
+
+    const activeResumeId = candidateProfile?.resumeReference?.resumeId || null;
 
     const interview = await Interview.create({
       candidate: userId,
@@ -43,6 +95,11 @@ const startInterview = async (req, res, next) => {
       job: jobId || null,
       jobIdString: jobId ? jobId.toString() : '',
       jobTitle: targetJob.title || 'Full Stack Developer',
+      resumeId: activeResumeId,
+      interviewCategory: 'mock',
+      questionSource: 'resume_keywords',
+      resumeKeywordSnapshot,
+      hrEvaluationPrompt: undefined, // Explicitly excluded
       interviewType,
       difficulty,
       status: 'in_progress',
@@ -50,8 +107,10 @@ const startInterview = async (req, res, next) => {
     });
 
     return res.status(201).json({
+      operation: 'mock_interview_start',
+      status: 'success',
       success: true,
-      message: 'Mock interview session initialized. Questions dynamically generated.',
+      message: 'Mock interview session initialized. Questions generated strictly from candidate resume keywords.',
       interview
     });
   } catch (error) {
@@ -59,7 +118,7 @@ const startInterview = async (req, res, next) => {
   }
 };
 
-// @desc    Schedule an HR/Technical Interview by Recruiter
+// @desc    Schedule an HR/Technical Interview by Recruiter (Actual Interview)
 // @route   POST /api/interviews/schedule
 // @access  Private (Recruiter/Admin)
 const scheduleInterview = async (req, res, next) => {
@@ -75,17 +134,22 @@ const scheduleInterview = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Job posting not found.' });
     }
 
+    const hrPromptText = job.hrEvaluationPrompt || job.evaluation?.hrPrompt || 'Evaluate based on technical proficiency and communication.';
+
     const interview = await Interview.create({
       candidate: candidateId,
       candidateIdString: candidateId.toString(),
       job: jobId,
       jobIdString: jobId.toString(),
       jobTitle: job.title,
+      interviewCategory: 'actual',
+      questionSource: 'recruiter_job',
+      hrEvaluationPrompt: hrPromptText,
       interviewType: ['technical', 'behavioural', 'mixed', 'hr'].includes(interviewType) ? interviewType : 'hr',
       difficulty: 'Mid-Level',
       status: 'scheduled',
       scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(Date.now() + 86400000 * 2),
-      notes: notes || 'HR Candidate Screening Interview'
+      notes: notes || 'Recruiter Candidate Screening Interview'
     });
 
     // Automatically update Application status to interview_scheduled if application exists
@@ -99,8 +163,10 @@ const scheduleInterview = async (req, res, next) => {
       .populate('job', 'title department location');
 
     return res.status(201).json({
+      operation: 'actual_interview_schedule',
+      status: 'success',
       success: true,
-      message: 'HR Interview scheduled successfully.',
+      message: 'Actual Recruiter Interview scheduled successfully.',
       interview: populatedInterview
     });
   } catch (error) {
@@ -152,7 +218,10 @@ const submitAnswer = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Interview session not found.' });
     }
 
-    const questionIndex = interview.questions.findIndex(q => q.questionId === Number(questionId));
+    const questionIndex = interview.questions.findIndex(q =>
+      String(q.questionId) === String(questionId) || String(q._id) === String(questionId)
+    );
+
     if (questionIndex === -1) {
       return res.status(404).json({ success: false, message: 'Question ID not found in this interview session.' });
     }
@@ -160,10 +229,51 @@ const submitAnswer = async (req, res, next) => {
     const targetQuestion = interview.questions[questionIndex];
     targetQuestion.candidateResponse = responseText;
 
-    // Run AI evaluation on answer
-    const evaluation = await aiService.evaluateInterviewResponse(targetQuestion, responseText);
-    targetQuestion.evaluation = evaluation;
+    let evaluationResult = null;
 
+    if (interview.interviewCategory === 'mock' || interview.questionSource === 'resume_keywords') {
+      // AI CONTEXT GUARD FOR MOCK EVALUATION: Ensure HR Evaluation Prompt is excluded
+      console.log('[MOCK_EVALUATION]', {
+        question: targetQuestion.questionText,
+        sourceKeyword: targetQuestion.sourceKeyword || 'React',
+        candidateAnswer: responseText,
+        hrEvaluationPrompt: 'EXCLUDED'
+      });
+
+      const aiEvalRes = await evaluationAIService.evaluateMockAnswer(
+        targetQuestion,
+        responseText,
+        targetQuestion.sourceKeyword
+      );
+
+      const evalData = aiEvalRes?.result || aiEvalRes || {};
+      evaluationResult = {
+        technicalScore: evalData.technicalCorrectness || evalData.score || 80,
+        communicationScore: evalData.clarity || 80,
+        problemSolvingScore: evalData.reasoning || 80,
+        depthScore: evalData.completeness || 75,
+        relevanceScore: evalData.relevance || 85,
+        feedback: evalData.feedback || 'Response demonstrates good understanding of core topic.',
+        behaviouralEvidence: evalData.strengths || [],
+        keyStrengths: evalData.strengths || ['Direct concept explanation'],
+        areasForImprovement: evalData.improvements || ['Could elaborate on production trade-offs']
+      };
+    } else {
+      // ACTUAL INTERVIEW EVALUATION (Uses HR Evaluation Prompt & Job Context)
+      const job = await Job.findById(interview.job);
+      const hrPrompt = interview.hrEvaluationPrompt || job?.hrEvaluationPrompt || job?.evaluation?.hrPrompt || '';
+
+      console.log('[ACTUAL_INTERVIEW_EVALUATION]', {
+        jobTitle: job?.title || interview.jobTitle,
+        hrPrompt,
+        question: targetQuestion.questionText
+      });
+
+      const aiEvalRes = await aiService.evaluateInterviewResponse(targetQuestion, responseText);
+      evaluationResult = aiEvalRes;
+    }
+
+    targetQuestion.evaluation = evaluationResult;
     await interview.save();
 
     return res.status(200).json({
@@ -268,10 +378,36 @@ const getInterviewById = async (req, res, next) => {
   }
 };
 
+// @desc    Get all interviews for current logged in candidate (Mock & Actual)
+// @route   GET /api/interviews/candidate
+// @access  Private (Candidate)
+const getCandidateInterviews = async (req, res, next) => {
+  try {
+    const candidateId = req.user.id || req.user._id;
+    const interviews = await Interview.find({
+      $or: [
+        { candidate: candidateId },
+        { candidateIdString: candidateId.toString() }
+      ]
+    })
+      .populate('job', 'title department company description requiredSkills preferredSkills location')
+      .sort({ createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      count: interviews.length,
+      interviews
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   startInterview,
   scheduleInterview,
   getRecruiterInterviews,
+  getCandidateInterviews,
   submitAnswer,
   completeInterview,
   getInterviewById

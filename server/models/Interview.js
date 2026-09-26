@@ -14,26 +14,128 @@ const interviewSchema = new mongoose.Schema(
     },
     jobIdString: String,
     jobTitle: String,
+    resumeId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Resume'
+    },
+    interviewCategory: {
+      type: String,
+      enum: ['mock', 'actual'],
+      default: 'mock'
+    },
+    questionSource: {
+      type: String,
+      enum: ['resume_keywords', 'recruiter_job'],
+      default: 'resume_keywords'
+    },
+    resumeKeywordSnapshot: {
+      type: [mongoose.Schema.Types.Mixed],
+      default: []
+    },
+    hrEvaluationPrompt: {
+      type: String,
+      default: undefined
+    },
+    contextSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     interviewType: {
       type: String,
-      enum: ['technical', 'behavioural', 'mixed', 'hr', 'mcq'],
       default: 'mixed'
     },
     difficulty: {
       type: String,
-      enum: ['Junior', 'Mid-Level', 'Senior'],
       default: 'Mid-Level'
     },
     status: {
       type: String,
-      enum: ['scheduled', 'in_progress', 'completed', 'cancelled'],
-      default: 'in_progress'
+      enum: ['draft', 'generating', 'ready', 'in_progress', 'completed', 'failed', 'scheduled', 'cancelled'],
+      default: 'ready'
     },
+    startedAt: Date,
+    completedAt: Date,
     scheduledDate: Date,
     notes: String,
+    configuration: {
+      difficulty: String,
+      assessmentMethod: String,
+      totalQuestions: Number,
+      sections: [
+        {
+          type: { type: String },
+          count: Number
+        }
+      ]
+    },
+    sourceSnapshot: {
+      resume: mongoose.Schema.Types.Mixed,
+      job: mongoose.Schema.Types.Mixed
+    },
+    mock_interview_questions: {
+      mcq: [
+        {
+          questionId: String,
+          question: String,
+          options: [String],
+          correctAnswer: String,
+          userAnswer: String,
+          isAnswered: { type: Boolean, default: false },
+          answeredAt: Date,
+          topic: String,
+          difficulty: String,
+          expectedSkills: [String],
+          evaluation: mongoose.Schema.Types.Mixed
+        }
+      ],
+      voice: [
+        {
+          questionId: String,
+          question: String,
+          transcript: String,
+          answer: String,
+          durationSeconds: Number,
+          userAnswer: String,
+          isAnswered: { type: Boolean, default: false },
+          answeredAt: Date,
+          topic: String,
+          difficulty: String,
+          expectedSkills: [String],
+          evaluation: mongoose.Schema.Types.Mixed
+        }
+      ],
+      text: [
+        {
+          questionId: String,
+          question: String,
+          userAnswer: String,
+          isAnswered: { type: Boolean, default: false },
+          answeredAt: Date,
+          topic: String,
+          difficulty: String,
+          expectedSkills: [String],
+          evaluation: mongoose.Schema.Types.Mixed
+        }
+      ]
+    },
+    evaluation: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
+    progress: {
+      currentQuestionIndex: { type: Number, default: 0 },
+      answeredQuestions: { type: Number, default: 0 },
+      totalQuestions: { type: Number, default: 0 }
+    },
+    metadata: {
+      generationModel: String,
+      generationVersion: String,
+      generatedAt: Date
+    },
     questions: [
       {
         questionId: mongoose.Schema.Types.Mixed,
+        sourceKeyword: String,
         category: String,
         questionText: String,
         targetSkill: String,

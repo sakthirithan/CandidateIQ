@@ -515,15 +515,24 @@ export const mockInterviewService = {
   recordAnswer: async (sessionId, answerPayload) => {
     let session = activeSessions[sessionId] || storageMockInterviews.getById(sessionId);
 
-    // Call Express API endpoint if sessionId is MongoDB ObjectId (24 chars)
+    // Call Express API endpoints if sessionId is MongoDB ObjectId (24 chars)
     if (sessionId && sessionId.length === 24) {
       try {
-        await api.post(`/interviews/${sessionId}/answer`, {
-          questionId: answerPayload.questionId,
-          responseText: answerPayload.textAnswer || answerPayload.voiceTranscript || answerPayload.selectedOption || answerPayload.answer || 'Answer submitted'
+        await api.patch(`/mock-interviews/${sessionId}/questions/${answerPayload.questionId}/answer`, {
+          selectedOption: answerPayload.selectedOption,
+          textAnswer: answerPayload.textAnswer,
+          voiceTranscript: answerPayload.voiceTranscript,
+          answer: answerPayload.answer || answerPayload.textAnswer || answerPayload.voiceTranscript || answerPayload.selectedOption,
+          durationSeconds: answerPayload.durationSeconds || 0
         });
       } catch (err) {
-        console.warn(`[interviewService Warning] Failed to submit answer to backend for session ${sessionId}:`, err);
+        console.warn(`[interviewService Warning] Failed to submit mock-interview PATCH answer for session ${sessionId}:`, err);
+        try {
+          await api.post(`/interviews/${sessionId}/answer`, {
+            questionId: answerPayload.questionId,
+            responseText: answerPayload.textAnswer || answerPayload.voiceTranscript || answerPayload.selectedOption || answerPayload.answer || 'Answer submitted'
+          });
+        } catch (e2) {}
       }
     }
 
@@ -552,7 +561,12 @@ export const mockInterviewService = {
 
     if (sessionId && sessionId.length === 24) {
       try {
-        const response = await api.post(`/interviews/${sessionId}/complete`);
+        let response = null;
+        try {
+          response = await api.post(`/mock-interviews/${sessionId}/complete`);
+        } catch (e) {
+          response = await api.post(`/interviews/${sessionId}/complete`);
+        }
         if (response.data && response.data.interview) {
           const inv = response.data.interview;
           if (session) {
@@ -608,6 +622,86 @@ export const mockInterviewService = {
       }
     }
     return activeSessions[sessionId] || storageMockInterviews.getById(sessionId);
+  },
+
+  getCandidateInterviews: async () => {
+    try {
+      let response = null;
+      try {
+        response = await api.get('/mock-interviews');
+      } catch (e1) {
+        response = await api.get('/interviews/candidate');
+      }
+
+      if (response.data && Array.isArray(response.data.interviews) && response.data.interviews.length > 0) {
+        return response.data.interviews.map((inv) => {
+          const score = inv.score ?? inv.evaluation?.overallScore ?? inv.overallEvaluation?.overallInterviewScore ?? null;
+          const techScore = inv.technicalScore ?? inv.evaluation?.technicalScore ?? inv.overallEvaluation?.technicalProficiency ?? null;
+          const commScore = inv.communicationScore ?? inv.evaluation?.communicationScore ?? inv.overallEvaluation?.communicationClarity ?? null;
+          const reasScore = inv.reasoningScore ?? inv.evaluation?.reasoningScore ?? inv.overallEvaluation?.problemSolvingRating ?? null;
+          const behavScore = inv.behaviouralScore ?? inv.evaluation?.behaviouralScore ?? inv.overallEvaluation?.behaviouralCompetency ?? null;
+          const evalStatus = inv.evaluationStatus || inv.evaluation?.status || (inv.status === 'completed' ? 'pending' : 'unevaluated');
+
+          return {
+            attemptId: inv._id || inv.id,
+            id: inv._id || inv.id,
+            sessionId: inv._id || inv.id,
+            _id: inv._id,
+            source: inv.questionSource === 'recruiter_job' ? 'RECRUITER_JOB' : 'CUSTOM_JD',
+            jobId: inv.job?._id || inv.job || null,
+            userId: inv.candidate,
+            candidateId: inv.candidate,
+            title: inv.jobTitle || inv.job?.title || 'AI Mock Interview',
+            jobTitle: inv.jobTitle || inv.job?.title || 'AI Mock Interview',
+            jobDescription: inv.job?.description || 'AI Mock Interview Session',
+            company: inv.company || inv.job?.company || 'CandidateIQ Enterprise',
+            difficulty: inv.difficulty || 'Medium',
+            method: (inv.method || inv.interviewType || 'RANDOM').toUpperCase(),
+            status: inv.status === 'completed' || inv.status === 'Completed' ? 'completed' : 'in_progress',
+            state: inv.status === 'completed' || inv.status === 'Completed' ? 'Completed' : 'In Progress',
+            questionCount: inv.questionCount || (inv.questions?.length) || 20,
+            answeredCount: inv.answeredCount || 0,
+            score,
+            overallScore: score,
+            technicalScore: techScore,
+            communicationScore: commScore,
+            reasoningScore: reasScore,
+            behaviouralScore: behavScore,
+            evaluationStatus: evalStatus,
+            startedAt: inv.createdAt || inv.startedAt,
+            finishedAt: inv.completedAt || inv.updatedAt,
+            rawInterview: inv
+          };
+        });
+      }
+    } catch (err) {
+      console.warn('[interviewService] Live database fetch failed, reading fallback storage:', err);
+    }
+    return storageMockInterviews.getAll();
+  },
+
+  getMockInterviewById: async (id) => {
+    try {
+      const response = await api.get(`/mock-interviews/${id}`);
+      if (response.data && response.data.interview) {
+        return response.data.interview;
+      }
+    } catch (err) {
+      console.warn(`[interviewService] GET /mock-interviews/${id} failed:`, err);
+    }
+    return null;
+  },
+
+  evaluateMockInterview: async (id, force = false) => {
+    try {
+      const response = await api.post(`/mock-interviews/${id}/evaluate`, { force });
+      if (response.data) {
+        return response.data;
+      }
+    } catch (err) {
+      console.error(`[interviewService] POST /mock-interviews/${id}/evaluate failed:`, err);
+      throw err;
+    }
   },
 
   recordTabSwitch: async (sessionId) => {

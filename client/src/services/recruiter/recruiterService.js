@@ -59,6 +59,12 @@ export const recruiterService = {
   getRecruiterInterviews: async () => {
     const response = await api.get('/interviews/recruiter');
     return response.data;
+  },
+
+  // Get job-specific & application-specific intelligence
+  getApplicationIntelligence: async (applicationId) => {
+    const response = await api.get(`/analytics/application/${applicationId}`);
+    return response.data;
   }
 };
 

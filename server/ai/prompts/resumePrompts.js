@@ -129,10 +129,47 @@ JSON Structure Example:
 
 CRITICAL RULES:
 - You MUST populate the "sections" array with EVERY section found in the resume. Do NOT return an empty "sections" array.
-- For any custom / non-standard section (e.g. Research, Publications, Open Source, Leadership, Volunteer, Awards), set sectionType to "custom" or "research" / "publications" and populate title & content or items.
+- PROJECT EXTRACTION BOUNDARY RULES:
+  * Extract EVERY project as an INDEPENDENT object inside the "projects" section items array.
+  * Project 1 must NEVER absorb Project 2 or Project 3. Every project MUST have its own name/title, description, about paragraph, and technologies.
+  * STOP project extraction when reaching adjacent sections (Education, Experience, Skills, Certifications, Awards).
 - Return ONLY valid JSON matching this structure.
 
 Resume Text:
+${rawText}
+`,
+
+  extractResumeKeywords: (rawText) => `Analyze the candidate's resume content below.
+Extract meaningful technical, architectural, and domain keywords SEMANTICALLY from the COMPLETE content.
+
+SEMANTIC EXTRACTION INSTRUCTIONS:
+1. Do NOT limit extraction to explicitly labeled "Skills" sections.
+2. Extract keywords from:
+   - Profile / Summary Paragraphs
+   - Project Titles, Descriptions, and About/Explanation Paragraphs
+   - Work Experience & Key Responsibilities
+   - Technical Skills, Frameworks, Databases, and Tools
+3. Include:
+   - Core Technologies (e.g. "React", "Node.js", "MongoDB", "Python", "FastAPI")
+   - Technical & Architectural Concepts (e.g. "REST API", "Microservices", "Authentication", "Real-Time Communication", "JWT")
+   - Domain Concepts & Capabilities (e.g. "Candidate Profiling", "Resume Parsing", "Sentiment Analysis", "Behavioural Analytics", "AI Evaluation")
+4. EXCLUDE generic stop words and filler words (e.g. "the", "and", "developed", "using", "project", "application", "built").
+5. Only extract concepts that are supported by the actual resume content.
+
+Return ONLY valid JSON matching this exact structure:
+{
+  "keywords": [
+    "React",
+    "Node.js",
+    "MongoDB",
+    "Candidate Profiling",
+    "Resume Parsing",
+    "REST API",
+    "Microservices"
+  ]
+}
+
+Candidate Resume Text:
 ${rawText}
 `
 };

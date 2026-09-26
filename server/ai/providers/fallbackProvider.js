@@ -172,6 +172,44 @@ class FallbackProvider {
     };
   }
 
+  fallbackResumeKeywords(rawText = '') {
+    const techSkills = [
+      "JavaScript", "Python", "React", "Node.js", "Express", "MongoDB", "SQL", "REST API", "JWT", "Git", "Docker", "AWS"
+    ];
+    const found = techSkills.filter(s => new RegExp(`\\b${s.replace('.', '\\.')}\\b`, 'i').test(rawText));
+    const keywords = found.length > 0 ? found : ["React", "Node.js", "MongoDB", "Express", "REST API"];
+    return {
+      operation: 'resume_keyword_extraction',
+      status: 'success',
+      result: {
+        candidateId: 'cand_123',
+        resumeId: 'res_123',
+        keywords
+      },
+      keywords
+    };
+  }
+
+  fallbackJobKeywords(title = '', jdText = '', reqSkills = [], prefSkills = []) {
+    const reqList = Array.isArray(reqSkills) ? reqSkills : [reqSkills].filter(Boolean);
+    const prefList = Array.isArray(prefSkills) ? prefSkills : [prefSkills].filter(Boolean);
+
+    const keywords = Array.from(new Set([...reqList, ...prefList].filter(Boolean)));
+    if (keywords.length === 0) {
+      keywords.push('React', 'Node.js', 'MongoDB', 'Docker', 'AWS', 'REST API');
+    }
+
+    return {
+      operation: 'job_keyword_extraction',
+      status: 'success',
+      result: {
+        jobId: 'job_123',
+        keywords
+      },
+      keywords
+    };
+  }
+
   fallbackJobAnalysis(text = '') {
     return {
       title: "Senior Full Stack Engineer",

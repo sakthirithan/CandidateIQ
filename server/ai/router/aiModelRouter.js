@@ -8,18 +8,19 @@ const fallbackProvider = require('../providers/fallbackProvider');
  */
 
 class AIModelRouter {
-  selectProvider() {
-    const preferred = (process.env.AI_PROVIDER || 'groq').toLowerCase();
-
-    if (preferred === 'groq' && groqProvider.isAvailable()) {
-      return groqProvider;
+  selectProvider(operation = '') {
+    // Resume Parser AI & Resume Keyword Extraction explicitly use Gemini when available
+    if ((operation === 'resume_parse' || operation === 'resume_keyword_extraction') && geminiProvider.isAvailable()) {
+      return geminiProvider;
     }
+
+    const preferred = (process.env.AI_PROVIDER || 'gemini').toLowerCase();
 
     if (preferred === 'gemini' && geminiProvider.isAvailable()) {
       return geminiProvider;
     }
 
-    if (groqProvider.isAvailable()) {
+    if (preferred === 'groq' && groqProvider.isAvailable()) {
       return groqProvider;
     }
 
@@ -27,11 +28,25 @@ class AIModelRouter {
       return geminiProvider;
     }
 
+    if (groqProvider.isAvailable()) {
+      return groqProvider;
+    }
+
     return fallbackProvider;
   }
 
   getFallbackProvider() {
     return fallbackProvider;
+  }
+
+  getSecondaryProvider(currentPrimaryName = 'gemini') {
+    if (currentPrimaryName === 'gemini' && groqProvider.isAvailable()) {
+      return groqProvider;
+    }
+    if (currentPrimaryName === 'groq' && geminiProvider.isAvailable()) {
+      return geminiProvider;
+    }
+    return geminiProvider.isAvailable() ? geminiProvider : (groqProvider.isAvailable() ? groqProvider : null);
   }
 }
 

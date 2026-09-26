@@ -4,6 +4,7 @@ const {
   startInterview,
   scheduleInterview,
   getRecruiterInterviews,
+  getCandidateInterviews,
   submitAnswer,
   completeInterview,
   getInterviewById
@@ -13,6 +14,7 @@ const { protect, authorize } = require('../middleware/authMiddleware');
 router.post('/start', protect, startInterview);
 router.post('/schedule', protect, authorize('hr', 'recruiter', 'admin'), scheduleInterview);
 router.get('/recruiter', protect, authorize('hr', 'recruiter', 'admin'), getRecruiterInterviews);
+router.get('/candidate', protect, getCandidateInterviews);
 router.post('/:id/answer', protect, submitAnswer);
 router.post('/:id/complete', protect, completeInterview);
 router.get('/:id', protect, getInterviewById);

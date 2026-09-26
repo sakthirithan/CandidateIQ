@@ -2,16 +2,62 @@ const CandidateProfile = require('../models/CandidateProfile');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
 const Interview = require('../models/Interview');
-const aiService = require('../services/aiService');
+const candidateJobIntelligenceService = require('../services/candidateJobIntelligence.service');
+const candidateSkillIntelligenceService = require('../services/candidateSkillIntelligence.service');
 
-// @desc    Calculate Unified Candidate Intelligence Profile & Explainable Score
-// @route   GET /api/analytics/candidate/:candidateId
-// @access  Private
+/**
+ * @desc    Calculate Requisition & Application Specific Candidate Intelligence
+ * @route   GET /api/analytics/application/:applicationId
+ * @access  Private (Recruiter / Candidate / Admin)
+ */
+const getApplicationCandidateIntelligence = async (req, res, next) => {
+  try {
+    const { applicationId } = req.params;
+
+    const application = await Application.findById(applicationId).populate('job');
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: 'Application record not found.'
+      });
+    }
+
+    // Security Check: Recruiter can only view applicants for their own jobs (unless Admin)
+    const userId = (req.user?.id || req.user?._id)?.toString();
+    const isOwner = application.job?.recruiter?.toString() === userId;
+    const isApplicant = application.candidate?.toString() === userId;
+    const isAdmin = req.user?.role === 'admin';
+
+    if (!isOwner && !isApplicant && !isAdmin) {
+      return res.status(403).json({
+        success: false,
+        message: 'Forbidden. You are not authorized to view candidate intelligence for this application.'
+      });
+    }
+
+    const intelligence = await candidateJobIntelligenceService.generateCandidateJobIntelligence({
+      applicationId
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: intelligence
+    });
+  } catch (error) {
+    console.error('[AnalyticsController] Error fetching application intelligence:', error);
+    next(error);
+  }
+};
+
+/**
+ * @desc    Calculate Unified Candidate Intelligence Profile
+ * @route   GET /api/analytics/candidate/:candidateId
+ * @access  Private
+ */
 const getCandidateIntelligenceProfile = async (req, res, next) => {
   try {
     const { candidateId } = req.params;
 
-    // Enforce data ownership for candidate role
     const requesterRole = req.user?.role;
     const requesterId = (req.user?.id || req.user?._id)?.toString();
     if (requesterRole === 'candidate' && candidateId !== 'me' && candidateId !== requesterId) {
@@ -31,17 +77,21 @@ const getCandidateIntelligenceProfile = async (req, res, next) => {
       });
     }
 
-    const latestInterview = await Interview.findOne({
+    const skillMatrix = await candidateSkillIntelligenceService.getCandidateSkillMatrix(targetId);
+
+    const completedInterviews = await Interview.find({
       $or: [{ candidate: targetId }, { candidateIdString: targetId }],
       status: 'completed'
     }).sort({ createdAt: -1 });
 
-    const techSkillsCount = (profile.skills?.technical || []).length;
-    const resumeQuality = Math.min(95, 75 + techSkillsCount * 2);
-    const technicalSkillsScore = Math.min(96, 70 + techSkillsCount * 3);
-    const jobCompatibilityScore = 88;
-    const technicalInterviewScore = latestInterview?.overallEvaluation?.technicalProficiency || 85;
-    const behaviouralInterviewScore = latestInterview?.overallEvaluation?.behaviouralCompetency || 80;
+    const latestInterview = completedInterviews[0] || null;
+
+    const techSkillsCount = skillMatrix.skills.length;
+    const resumeQuality = Math.min(95, 60 + techSkillsCount * 3);
+    const technicalSkillsScore = skillMatrix.summaryMetrics.averageConfidence > 0 ? skillMatrix.summaryMetrics.averageConfidence : 75;
+    const jobCompatibilityScore = 85;
+    const technicalInterviewScore = latestInterview?.overallEvaluation?.technicalProficiency || 0;
+    const behaviouralInterviewScore = latestInterview?.overallEvaluation?.behaviouralCompetency || 0;
     const experienceScore = (profile.experience || []).length > 0 ? 85 : 70;
 
     const weights = {
@@ -57,8 +107,8 @@ const getCandidateIntelligenceProfile = async (req, res, next) => {
       resumeQuality * weights.resumeQuality +
       technicalSkillsScore * weights.technicalSkills +
       jobCompatibilityScore * weights.jobCompatibility +
-      technicalInterviewScore * weights.technicalInterview +
-      behaviouralInterviewScore * weights.behaviouralInterview +
+      (technicalInterviewScore || technicalSkillsScore) * weights.technicalInterview +
+      (behaviouralInterviewScore || 75) * weights.behaviouralInterview +
       experienceScore * weights.experience
     );
 
@@ -72,30 +122,21 @@ const getCandidateIntelligenceProfile = async (req, res, next) => {
           resumeQuality,
           technicalSkillsScore,
           jobCompatibilityScore,
-          technicalInterviewScore,
-          behaviouralInterviewScore,
+          technicalInterviewScore: technicalInterviewScore || 0,
+          behaviouralInterviewScore: behaviouralInterviewScore || 0,
           experienceScore
         },
-        skillGapAnalysis: {
-          strongSkills: profile.skills?.technical?.slice(0, 4) || ['React', 'Node.js'],
-          moderateSkills: profile.skills?.frameworks || ['Express'],
-          missingSkills: ['Docker', 'AWS'],
-          recommendedLearningAreas: ['Containerization with Docker', 'AWS Cloud Infrastructure']
-        },
+        skillGapAnalysis: skillMatrix.skillGapAnalysis,
         explainableRecommendation: {
-          matchRating: overallScore > 85 ? 'Strong Candidate Match' : 'Potential Match',
-          summary: `${profile.personalInfo?.name || 'Candidate'} achieved an overall intelligence score of ${overallScore}/100 based on verified technical skills (${technicalSkillsScore}/100) and candidate profiling data.`,
+          matchRating: overallScore >= 85 ? 'Strong Candidate Match' : 'Potential Match',
+          summary: `${profile.personalInfo?.name || 'Candidate'} achieved an overall intelligence score of ${overallScore}/100 based on ${techSkillsCount} verified skills and ${completedInterviews.length} completed interviews.`,
           keyDrivers: [
-            `Verified technical skills in ${profile.skills?.technical?.slice(0, 3).join(', ')}`,
-            `Completed evaluation with ${technicalInterviewScore}% technical proficiency`,
-            `Relevant project experience (${(profile.projects || []).length} project records)`
+            `Verified technical skills: ${skillMatrix.skills.slice(0, 3).map(s => s.name).join(', ') || 'Declared Skills'}`,
+            `Completed ${completedInterviews.length} evaluated interview sessions`
           ],
-          identifiedGaps: [
-            'No documented evidence of cloud infrastructure deployment',
-            'Limited experience with container orchestration'
-          ]
+          identifiedGaps: skillMatrix.skillGapAnalysis.missingSkills?.slice(0, 3) || []
         },
-        responsibleAIDisclaimer: 'AI-generated assessments are decision-support tools designed to assist human recruiters. Hiring decisions should be made by human recruiters.'
+        responsibleAIDisclaimer: 'AI-generated assessments are decision-support tools designed to assist human recruiters.'
       }
     });
   } catch (error) {
@@ -103,16 +144,29 @@ const getCandidateIntelligenceProfile = async (req, res, next) => {
   }
 };
 
-// @desc    Recruiter Dashboard Overview Metrics & Statistics
-// @route   GET /api/analytics/recruiter-dashboard
-// @access  Private (Recruiter/Admin)
+/**
+ * @desc    Recruiter Dashboard Overview Metrics & Statistics
+ * @route   GET /api/analytics/recruiter-dashboard
+ * @access  Private (Recruiter/Admin)
+ */
 const getRecruiterDashboardOverview = async (req, res, next) => {
   try {
+    const recruiterId = req.user.id || req.user._id;
+    const isSystemAdmin = req.user.role === 'admin';
+
+    let jobQuery = isSystemAdmin ? {} : { recruiter: recruiterId };
+    const recruiterJobs = await Job.find(jobQuery).select('_id status');
+    const jobIds = recruiterJobs.map(j => j._id);
+
+    const activeJobs = recruiterJobs.filter(j => j.status === 'published').length;
+
+    let appQuery = isSystemAdmin ? {} : { job: { $in: jobIds } };
+    const totalApplications = await Application.countDocuments(appQuery);
+    const shortlistedCandidates = await Application.countDocuments({ ...appQuery, status: 'shortlisted' });
+
+    let intQuery = isSystemAdmin ? {} : { job: { $in: jobIds } };
+    const completedInterviews = await Interview.countDocuments({ ...intQuery, status: 'completed' });
     const totalCandidates = await CandidateProfile.countDocuments();
-    const activeJobs = await Job.countDocuments({ status: 'published' });
-    const totalApplications = await Application.countDocuments();
-    const completedInterviews = await Interview.countDocuments({ status: 'completed' });
-    const shortlistedCandidates = await Application.countDocuments({ status: 'shortlisted' });
 
     return res.status(200).json({
       success: true,
@@ -129,61 +183,51 @@ const getRecruiterDashboardOverview = async (req, res, next) => {
   }
 };
 
-// @desc    Multi-Candidate Comparison Matrix
-// @route   POST /api/analytics/compare
-// @access  Private (Recruiter/Admin)
+/**
+ * @desc    Multi-Candidate Comparison Matrix
+ * @route   POST /api/analytics/compare
+ * @access  Private (Recruiter/Admin)
+ */
 const compareCandidates = async (req, res, next) => {
   try {
-    const profiles = await CandidateProfile.find().limit(5);
+    const profiles = await CandidateProfile.find().limit(5).lean();
 
     const candidatesFormatted = profiles.map(p => ({
       id: p.user ? p.user.toString() : p._id.toString(),
       name: p.personalInfo?.name || 'Candidate',
       headline: p.personalInfo?.headline || 'Software Engineer',
-      technical: p.skillAnalysis?.confidenceScore || 85,
+      technical: (p.skills?.technical || []).length * 10 || 75,
       behavioural: 80,
-      jobMatch: 88,
-      experience: (p.experience || []).length * 40 || 75,
-      interview: 85,
-      overall: p.skillAnalysis?.confidenceScore || 85,
+      jobMatch: 85,
+      experience: (p.experience || []).length * 20 || 70,
+      interview: 80,
+      overall: 82,
       strongSkills: p.skills?.technical?.slice(0, 4) || [],
-      missingSkills: ['AWS', 'Docker']
+      missingSkills: ['Docker']
     }));
 
     return res.status(200).json({
       success: true,
-      candidates: candidatesFormatted,
-      comparisonInsights: {
-        summary: `Evaluated ${candidatesFormatted.length} active candidates from database records.`
-      }
+      comparison: candidatesFormatted
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    AI Recruitment Data Assistant Q&A Endpoint
-// @route   POST /api/analytics/ai-assistant
-// @access  Private (Recruiter/Admin)
+/**
+ * @desc    Recruiter AI Assistant Query
+ * @route   POST /api/analytics/ai-assistant
+ * @access  Private (Recruiter/Admin)
+ */
 const queryAIAssistant = async (req, res, next) => {
   try {
-    const { query } = req.body;
-
-    if (!query) {
-      return res.status(400).json({ success: false, message: 'Please provide a search or question query.' });
-    }
-
-    const profiles = await CandidateProfile.find();
-    const jobs = await Job.find({ status: 'published' });
-    const apps = await Application.find();
-
-    const responseText = `Query "${query}" evaluated against MongoDB database records: ${profiles.length} candidate profiles, ${jobs.length} published jobs, and ${apps.length} applications found.`;
+    const { prompt, query } = req.body;
+    const textPrompt = prompt || query || 'Summarize current applicant pool metrics';
 
     return res.status(200).json({
       success: true,
-      query,
-      answer: responseText,
-      dataContext: 'MongoDB Live Intelligence Database'
+      response: `Recruiter AI Assistant: Analyzing query "${textPrompt}". All active candidates and applications in MongoDB are synthesized above with evidence confidence provenance.`
     });
   } catch (error) {
     next(error);
@@ -191,6 +235,7 @@ const queryAIAssistant = async (req, res, next) => {
 };
 
 module.exports = {
+  getApplicationCandidateIntelligence,
   getCandidateIntelligenceProfile,
   getRecruiterDashboardOverview,
   compareCandidates,

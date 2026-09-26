@@ -23,7 +23,7 @@ const jsonParser = {
 
     // 3. Locate first '{' or '[' and last '}' or ']'
     const firstBrace = cleaned.search(/[\{\[]/);
-    const lastBrace = cleaned.search(/[\}\]][^]*$/);
+    const lastBrace = Math.max(cleaned.lastIndexOf('}'), cleaned.lastIndexOf(']'));
 
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
       cleaned = cleaned.substring(firstBrace, lastBrace + 1);

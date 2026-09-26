@@ -30,13 +30,15 @@ class GroqProvider {
 
     const startTime = Date.now();
     
-    // Active Groq model fallback hierarchy for this account
-    const modelsToTry = [
-      this.modelName,
-      'openai/gpt-oss-120b',
-      'openai/gpt-oss-20b',
-      'qwen/qwen3.8-27b'
-    ];
+    // Active Groq model fallback hierarchy
+    const modelsToTry = Array.from(new Set([
+      process.env.GROQ_MODEL,
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'llama-3.2-3b-preview',
+      'qwen-2.5-coder-32b',
+      'deepseek-r1-distill-llama-70b'
+    ].filter(Boolean)));
 
     let lastError = null;
 
@@ -54,7 +56,7 @@ class GroqProvider {
             }
           ],
           model: modelCandidate,
-          max_tokens: 2000,
+          max_tokens: 8192,
           response_format: { type: 'json_object' }
         });
 

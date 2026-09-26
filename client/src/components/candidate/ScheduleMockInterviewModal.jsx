@@ -96,7 +96,7 @@ export default function ScheduleMockInterviewModal({
             </div>
             <div>
               <h3 className="text-base font-bold font-outfit text-slate-950">Create / Schedule AI Mock Interview</h3>
-              <p className="text-xs text-slate-500 font-medium">Questions generated strictly from Job Description (JD) requirements.</p>
+              <p className="text-xs text-slate-500 font-medium">Questions generated strictly from your confirmed <strong>Resume Keywords</strong>.</p>
             </div>
           </div>
           <button

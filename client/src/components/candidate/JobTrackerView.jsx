@@ -114,13 +114,7 @@ function JobTrackerView({ onNavigateToJobDetails, onExploreJobs }) {
     return st.includes(target);
   });
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center p-16">
-        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    );
-  }
+
 
   return (
     <div className="p-6 md:p-8 space-y-6 select-none max-w-6xl mx-auto">
@@ -180,7 +174,13 @@ function JobTrackerView({ onNavigateToJobDetails, onExploreJobs }) {
 
       {/* Applied Job Requisition Cards */}
       <div className="space-y-4">
-        {filteredApps.map((app) => {
+        {loading && filteredApps.length === 0 ? (
+          <div className="saas-card p-12 text-center border border-slate-200/90 bg-white">
+            <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-xs font-bold text-slate-500 mt-3 font-outfit">Loading Applied Jobs...</p>
+          </div>
+        ) : (
+          filteredApps.map((app) => {
           const job = jobsMap[app.jobId] || {
             title: app.jobTitle,
             company: app.company,
@@ -263,10 +263,11 @@ function JobTrackerView({ onNavigateToJobDetails, onExploreJobs }) {
               </div>
             </div>
           );
-        })}
+          })
+        )}
 
         {/* Empty States */}
-        {filteredApps.length === 0 && (
+        {!loading && filteredApps.length === 0 && (
           <div className="saas-card p-12 text-center bg-white border border-slate-200/80 space-y-4 max-w-md mx-auto rounded-2xl">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center mx-auto shadow-inner">
               <BookmarkCheck className="w-7 h-7" />

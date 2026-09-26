@@ -12,33 +12,54 @@ class AIOrchestrator {
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
     const startTime = Date.now();
     let attempt = 1;
-    let primaryProvider = aiModelRouter.selectProvider();
+    let primaryProvider = aiModelRouter.selectProvider(operation);
     let fallbackUsed = false;
     let result = null;
     let providerName = primaryProvider.name;
     let modelName = primaryProvider.modelName;
 
     try {
-      // 1. Primary Attempt (if primary provider available and prompt provided)
-      if (primaryProvider.name !== 'fallback' && prompt) {
+      // 1. Primary AI Provider Attempt
+      if (primaryProvider.isAvailable() && prompt) {
         try {
           const providerRes = await primaryProvider.generateJSON(prompt);
           providerName = providerRes.provider;
           modelName = providerRes.model;
 
-          // 2. Validate with Zod Schema
           if (schema) {
             result = schema.parse(providerRes.json);
           } else {
             result = providerRes.json;
           }
         } catch (primaryErr) {
-          console.warn(`[AIOrchestrator] Primary provider (${primaryProvider.name}) failed on operation "${operation}". Error: ${primaryErr.message}. Triggering retry / fallback...`);
+          console.warn(`[AIOrchestrator] Primary provider (${primaryProvider.name}) failed on operation "${operation}". Error: ${primaryErr.message}. Triggering secondary AI failover...`);
           attempt = 2;
         }
       }
 
-      // 3. Fallback Execution if primary failed or unavailable
+      // 2. Secondary AI Provider Failover (Another real AI model executes the prompt)
+      if (!result && prompt) {
+        const secondaryProvider = aiModelRouter.getSecondaryProvider(primaryProvider.name);
+        if (secondaryProvider && secondaryProvider.isAvailable()) {
+          try {
+            console.log(`[AIOrchestrator] Executing failover on Secondary AI Provider: ${secondaryProvider.name}`);
+            const secRes = await secondaryProvider.generateJSON(prompt);
+            providerName = secRes.provider;
+            modelName = secRes.model;
+            fallbackUsed = true;
+
+            if (schema) {
+              result = schema.parse(secRes.json);
+            } else {
+              result = secRes.json;
+            }
+          } catch (secErr) {
+            console.warn(`[AIOrchestrator] Secondary AI provider (${secondaryProvider.name}) failed on operation "${operation}". Error: ${secErr.message}`);
+          }
+        }
+      }
+
+      // 3. Optional fallback function ONLY if AI providers were unable to return a result
       if (!result && fallbackFn) {
         fallbackUsed = true;
         providerName = 'fallback';
@@ -53,7 +74,7 @@ class AIOrchestrator {
       }
 
       if (!result) {
-        throw new Error(`Execution failed for operation "${operation}": Unable to generate schema-compliant result.`);
+        throw new Error(`AI generation failed for operation "${operation}": Primary and secondary AI models were unable to generate schema-compliant output.`);
       }
 
       const processingTimeMs = Date.now() - startTime;

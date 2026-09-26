@@ -43,6 +43,10 @@ const resumeSchema = new mongoose.Schema(
       totalSectionsDetected: { type: Number, default: 0 },
       resumeQualityScore: { type: Number, default: 85 },
       latencyMs: { type: Number, default: 0 }
+    },
+    keywords: {
+      type: [String],
+      default: []
     }
   },
   { timestamps: true }

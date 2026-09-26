@@ -58,8 +58,16 @@ const FullResumeExtractionSchema = z.object({
   }).default({ totalSectionsDetected: 0, resumeQualityScore: 80, missingCommonFields: [] })
 });
 
+const ResumeKeywordExtractionSchema = z.object({
+  candidateId: z.string().optional(),
+  resumeId: z.string().optional(),
+  keywords: z.array(z.string()).default([])
+});
+
 module.exports = {
   ResumeSectionItemSchema,
   DynamicResumeSectionSchema,
-  FullResumeExtractionSchema
+  FullResumeExtractionSchema,
+  ResumeKeywordExtractionSchema
 };
+

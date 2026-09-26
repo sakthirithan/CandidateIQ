@@ -100,6 +100,7 @@ function RecruiterJobManagement() {
       requiredSkills: 'React, Node.js, JavaScript, MongoDB',
       preferredSkills: 'Docker, AWS, Express',
       description: 'We are seeking a skilled engineer to join our team to lead scalable module development, API integration, and AI features.',
+      hrEvaluationPrompt: 'Evaluate candidates for this role based on their technical knowledge, project experience, communication, and ability to explain their work.',
       expMin: 2,
       expMax: 5,
       expUnit: 'years',
@@ -124,6 +125,7 @@ function RecruiterJobManagement() {
       requiredSkills: Array.isArray(job.requiredSkills) ? job.requiredSkills.join(', ') : job.requiredSkills || '',
       preferredSkills: Array.isArray(job.preferredSkills) ? job.preferredSkills.join(', ') : job.preferredSkills || '',
       description: job.description || '',
+      hrEvaluationPrompt: job.hrEvaluationPrompt || job.evaluation?.hrPrompt || 'Evaluate candidates for this role based on their technical knowledge, project experience, communication, and ability to explain their work.',
       expMin: job.experience?.min !== undefined ? job.experience.min : 2,
       expMax: job.experience?.max !== undefined ? job.experience.max : 5,
       expUnit: job.experience?.unit || 'years',
@@ -176,6 +178,7 @@ function RecruiterJobManagement() {
       requiredSkills: formData.requiredSkills.split(',').map((s) => s.trim()).filter(Boolean),
       preferredSkills: formData.preferredSkills.split(',').map((s) => s.trim()).filter(Boolean),
       description: formData.description.trim(),
+      hrEvaluationPrompt: (formData.hrEvaluationPrompt || '').trim(),
       experience: {
         min: expMin,
         max: expMax,
@@ -791,6 +794,36 @@ function RecruiterJobManagement() {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="input-saas w-full resize-none bg-white"
                 ></textarea>
+              </div>
+
+              {/* HR Evaluation Prompt & Context Isolation Banner */}
+              <div className="p-4 rounded-xl bg-purple-50/60 border border-purple-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-purple-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-purple-600" /> HR Candidate Evaluation Prompt
+                  </span>
+                  <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+                    Actual Interviews Only
+                  </span>
+                </div>
+
+                <div className="p-2.5 rounded-lg bg-white border border-purple-200/80 text-[11px] text-purple-950 font-medium flex items-start gap-2">
+                  <AlertTriangle className="w-4 h-4 text-purple-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Architectural Isolation Guard:</span> This HR Evaluation Prompt will be used <strong>only during actual recruiter candidate interviews</strong>. It will <strong>never influence candidate mock interviews or mock question generation</strong>.
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-600 block">Custom Recruiter HR Evaluation Prompt</label>
+                  <textarea
+                    rows={3}
+                    placeholder="e.g. Evaluate candidates for this role based on technical knowledge, project experience, communication, and ability to explain architectural trade-offs."
+                    value={formData.hrEvaluationPrompt}
+                    onChange={(e) => setFormData({ ...formData, hrEvaluationPrompt: e.target.value })}
+                    className="input-saas w-full resize-none bg-white text-xs"
+                  ></textarea>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">

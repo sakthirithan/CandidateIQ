@@ -137,15 +137,39 @@ function JobDetailsView({ jobId, returnTab, onBack, onNavigate }) {
     );
   };
 
-  if (loading || !job) {
+  const backLabel = returnTab === 'tracker' ? 'Back to Tracker' : 'Back to Job Discovery';
+
+  if (loading && !job) {
     return (
-      <div className="flex items-center justify-center p-16">
-        <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="p-6 md:p-8 space-y-6 select-none max-w-6xl mx-auto">
+        <div>
+          <button onClick={onBack} className="btn-secondary text-xs px-3.5 py-2 inline-flex items-center gap-2 font-semibold">
+            <ArrowLeft className="w-4 h-4 text-indigo-600" /> {backLabel}
+          </button>
+        </div>
+        <div className="saas-card p-12 text-center border border-slate-200/90 bg-white">
+          <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-xs font-bold text-slate-500 mt-3 font-outfit">Loading Job Requisition...</p>
+        </div>
       </div>
     );
   }
 
-  const backLabel = returnTab === 'tracker' ? 'Back to Tracker' : 'Back to Job Discovery';
+  if (!job) {
+    return (
+      <div className="p-6 md:p-8 space-y-6 select-none max-w-6xl mx-auto">
+        <div>
+          <button onClick={onBack} className="btn-secondary text-xs px-3.5 py-2 inline-flex items-center gap-2 font-semibold">
+            <ArrowLeft className="w-4 h-4 text-indigo-600" /> {backLabel}
+          </button>
+        </div>
+        <div className="saas-card p-12 text-center border border-slate-200/90 bg-white space-y-3">
+          <h3 className="text-lg font-bold font-outfit text-slate-900">Job Requisition Not Found</h3>
+          <p className="text-xs text-slate-500">The requested job details could not be found or may have been archived.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 md:p-8 space-y-6 select-none max-w-6xl mx-auto">

@@ -62,3 +62,31 @@ export const formatSalary = (sal, legacySalary) => {
 
   return 'Not specified';
 };
+
+/**
+ * Safely normalizes and converts any AI / API value into React-safe text.
+ * Prevents "Objects are not valid as a React child (found: object with keys ...)" crashes.
+ */
+export const renderSafeText = (value, fallback = '') => {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map((v) => renderSafeText(v)).filter(Boolean).join(', ');
+  }
+  if (typeof value === 'object') {
+    if (typeof value.min !== 'undefined' && typeof value.max !== 'undefined') {
+      return formatExperience(value);
+    }
+    if (value.name) return String(value.name);
+    if (value.title) return String(value.title);
+    if (value.text) return String(value.text);
+    if (value.label) return String(value.label);
+    if (value.value) return String(value.value);
+    return Object.entries(value)
+      .map(([k, v]) => `${k}: ${renderSafeText(v)}`)
+      .join(' | ');
+  }
+  return String(value);
+};

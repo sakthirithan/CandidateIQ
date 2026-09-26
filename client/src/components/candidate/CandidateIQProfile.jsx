@@ -693,25 +693,42 @@ function CandidateIQProfile() {
               </button>
             </div>
 
-            {(candidate.projects || []).map((p, idx) => (
-              <div key={p.id || idx} className="space-y-1.5 pb-3 border-b border-slate-100 last:border-0 last:pb-0 group">
-                <div className="flex justify-between items-center">
-                  <h4 className="text-xs font-bold text-slate-900 font-outfit">{p.name}</h4>
-                  <div className="flex items-center gap-2">
-                    {p.url && (
-                      <a href={p.url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
-                        <ExternalLink className="w-3.5 h-3.5" />
-                      </a>
+            {(candidate.projects || []).length === 0 ? (
+              <p className="text-xs text-slate-400 italic py-2">No projects detected or added yet.</p>
+            ) : (
+              (candidate.projects || []).map((p, idx) => {
+                const projTitle = p.name || p.title || `Project ${idx + 1}`;
+                const projDesc = p.description || p.about || '';
+                const projTechs = Array.isArray(p.technologies) ? p.technologies.join(', ') : (p.tech || p.technologies || '');
+                return (
+                  <div key={p.id || idx} className="space-y-1.5 pb-3 border-b border-slate-100 last:border-0 last:pb-0 group">
+                    <div className="flex justify-between items-center">
+                      <h4 className="text-xs font-bold text-slate-900 font-outfit">{projTitle}</h4>
+                      <div className="flex items-center gap-2">
+                        {p.url && (
+                          <a href={p.url} target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline flex items-center gap-1 text-[11px]">
+                            <ExternalLink className="w-3.5 h-3.5" /> Link
+                          </a>
+                        )}
+                        <button onClick={() => handleDeleteProject(p.id || idx)} className="text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    {projDesc && <p className="text-xs text-slate-600 leading-relaxed">{projDesc}</p>}
+                    {projTechs && (
+                      <div className="flex flex-wrap gap-1 pt-1">
+                        {(Array.isArray(p.technologies) ? p.technologies : projTechs.split(/[,;]+/)).map((tech, tIdx) => (
+                          <span key={tIdx} className="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 border border-indigo-100 text-[10px] font-semibold">
+                            {typeof tech === 'string' ? tech.trim() : tech}
+                          </span>
+                        ))}
+                      </div>
                     )}
-                    <button onClick={() => handleDeleteProject(p.id)} className="text-slate-400 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Trash2 className="w-3 h-3" />
-                    </button>
                   </div>
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed">{p.description}</p>
-                <div className="text-[11px] font-medium text-slate-500">{p.tech}</div>
-              </div>
-            ))}
+                );
+              })
+            )}
           </div>
 
           {/* 7. Certifications & 9. Languages Section */}

@@ -2,6 +2,8 @@ const Job = require('../models/Job');
 const Application = require('../models/Application');
 const CandidateProfile = require('../models/CandidateProfile');
 const aiService = require('../services/aiService');
+const jobAIService = require('../ai/services/jobAIService');
+const { normalizeKeywords } = require('../utils/keywordNormalizer');
 
 // @desc    Create a job posting
 // @route   POST /api/jobs
@@ -11,7 +13,7 @@ const createJob = async (req, res, next) => {
     const {
       title, department, description, requiredSkills, preferredSkills,
       experienceLevel, education, location, employmentType, status,
-      experience, salary
+      experience, salary, hrEvaluationPrompt, evaluation
     } = req.body;
 
     if (!title || !description || !requiredSkills || (Array.isArray(requiredSkills) && requiredSkills.length === 0)) {
@@ -65,12 +67,16 @@ const createJob = async (req, res, next) => {
         : `${expObj.min}–${expObj.max} ${expObj.unit ? (expObj.unit.charAt(0).toUpperCase() + expObj.unit.slice(1)) : 'Years'}`;
     }
 
+    const reqSkillsList = Array.isArray(requiredSkills) ? requiredSkills : requiredSkills.split(',').map(s => s.trim());
+    const prefSkillsList = Array.isArray(preferredSkills) ? preferredSkills : (preferredSkills ? preferredSkills.split(',').map(s => s.trim()) : []);
+    const hrPromptText = (hrEvaluationPrompt || evaluation?.hrPrompt || '').trim();
+
     const job = await Job.create({
       title: title.trim(),
       department: department || 'Engineering',
       description: description.trim(),
-      requiredSkills: Array.isArray(requiredSkills) ? requiredSkills : requiredSkills.split(',').map(s => s.trim()),
-      preferredSkills: Array.isArray(preferredSkills) ? preferredSkills : (preferredSkills ? preferredSkills.split(',').map(s => s.trim()) : []),
+      requiredSkills: reqSkillsList,
+      preferredSkills: prefSkillsList,
       experienceLevel: formattedExp,
       experience: expObj,
       salary: salObj,
@@ -79,10 +85,35 @@ const createJob = async (req, res, next) => {
       employmentType: employmentType || 'Full-time',
       status: status || 'published',
       recruiter: userId,
-      recruiterIdString: userId.toString()
+      recruiterIdString: userId.toString(),
+      hrEvaluationPrompt: hrPromptText,
+      evaluation: { hrPrompt: hrPromptText }
     });
 
-    return res.status(201).json({ success: true, job, message: 'Job posting created successfully.' });
+    // Run AI Job Keyword Extraction & Store array directly on Job document
+    const jobKeywordAiRes = await jobAIService.extractJobKeywords({
+      title: job.title,
+      description: job.description,
+      requiredSkills: job.requiredSkills,
+      preferredSkills: job.preferredSkills,
+      experienceLevel: job.experienceLevel,
+      education: job.education
+    });
+
+    const rawJobKeywords = jobKeywordAiRes?.result?.keywords || jobKeywordAiRes?.keywords || [];
+    const normalizedJobKeywords = normalizeKeywords(rawJobKeywords);
+
+    job.keywords = normalizedJobKeywords;
+    await job.save();
+
+    return res.status(201).json({
+      operation: 'job_creation',
+      status: 'success',
+      success: true,
+      message: 'Job posting created and job keywords extracted successfully.',
+      job,
+      keywords: normalizedJobKeywords
+    });
   } catch (error) {
     next(error);
   }
@@ -178,7 +209,7 @@ const updateJob = async (req, res, next) => {
     const {
       title, department, description, requiredSkills, preferredSkills,
       experienceLevel, education, location, employmentType, status,
-      experience, salary
+      experience, salary, hrEvaluationPrompt, evaluation
     } = req.body;
 
     // Backend Validation for Experience
@@ -219,6 +250,8 @@ const updateJob = async (req, res, next) => {
       };
     }
 
+    const keywordImpactFieldsChanged = Boolean(title || description || requiredSkills || preferredSkills);
+
     if (title) job.title = title.trim();
     if (department) job.department = department.trim();
     if (description) job.description = description.trim();
@@ -229,10 +262,116 @@ const updateJob = async (req, res, next) => {
     if (location) job.location = location;
     if (employmentType) job.employmentType = employmentType;
     if (status && ['published', 'draft', 'closed'].includes(status)) job.status = status;
+    if (hrEvaluationPrompt !== undefined || evaluation?.hrPrompt !== undefined) {
+      const promptText = (hrEvaluationPrompt || evaluation?.hrPrompt || '').trim();
+      job.hrEvaluationPrompt = promptText;
+      job.evaluation = { hrPrompt: promptText };
+    }
+
+    // Re-extract & overwrite keywords array if relevant fields changed
+    if (keywordImpactFieldsChanged) {
+      const jobKeywordAiRes = await jobAIService.extractJobKeywords({
+        title: job.title,
+        description: job.description,
+        requiredSkills: job.requiredSkills,
+        preferredSkills: job.preferredSkills,
+        experienceLevel: job.experienceLevel,
+        education: job.education
+      });
+      const rawJobKeywords = jobKeywordAiRes?.result?.keywords || jobKeywordAiRes?.keywords || [];
+      job.keywords = normalizeKeywords(rawJobKeywords);
+    }
 
     await job.save();
 
-    return res.status(200).json({ success: true, job, message: 'Job updated successfully.' });
+    return res.status(200).json({
+      success: true,
+      job,
+      keywords: job.keywords,
+      message: 'Job updated and keywords recalculated successfully.'
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update HR Evaluation Prompt for a job
+// @route   PATCH /api/jobs/:id/hr-prompt
+// @access  Private (Recruiter/Admin)
+const saveHREvaluationPrompt = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { hrEvaluationPrompt, hrPrompt } = req.body;
+    const promptText = (hrEvaluationPrompt || hrPrompt || '').trim();
+
+    const job = await Job.findById(id);
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job posting not found.' });
+    }
+
+    const userId = req.user.id || req.user._id;
+    const isOwner = job.recruiter.toString() === userId.toString();
+    const isAdmin = req.user.role === 'admin';
+
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ success: false, message: 'Forbidden. You are not authorized to update this job prompt.' });
+    }
+
+    job.hrEvaluationPrompt = promptText;
+    job.evaluation = { hrPrompt: promptText };
+    await job.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'HR Evaluation Prompt updated successfully.',
+      job
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get extracted Job Keywords & HR evaluation prompt for a job
+// @route   GET /api/jobs/:id/keywords
+// @access  Public / Private
+const getJobKeywords = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const job = await Job.findById(id);
+
+    if (!job) {
+      return res.status(404).json({ success: false, message: 'Job posting not found.' });
+    }
+
+    let keywords = job.keywords || [];
+
+    // On-the-fly backfill if keywords array is empty
+    if (!keywords || keywords.length === 0) {
+      const jobKeywordAiRes = await jobAIService.extractJobKeywords({
+        title: job.title,
+        description: job.description,
+        requiredSkills: job.requiredSkills,
+        preferredSkills: job.preferredSkills,
+        experienceLevel: job.experienceLevel,
+        education: job.education
+      });
+      const rawJobKeywords = jobKeywordAiRes?.result?.keywords || jobKeywordAiRes?.keywords || [];
+      keywords = normalizeKeywords(rawJobKeywords);
+      job.keywords = keywords;
+      await job.save();
+    }
+
+    return res.status(200).json({
+      operation: 'job_keyword_retrieval',
+      status: 'success',
+      success: true,
+      result: {
+        jobId: job._id.toString(),
+        hrEvaluationPrompt: job.hrEvaluationPrompt || job.evaluation?.hrPrompt || '',
+        keywords
+      },
+      keywords
+    });
   } catch (error) {
     next(error);
   }
@@ -491,5 +630,7 @@ module.exports = {
   applyToJob,
   getJobApplicants,
   getRecruiterApplications,
-  updateApplicationStatus
+  updateApplicationStatus,
+  saveHREvaluationPrompt,
+  getJobKeywords
 };

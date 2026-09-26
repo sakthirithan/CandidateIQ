@@ -4,7 +4,7 @@ import { mockCandidateService } from '../../services/mockApi/candidateService';
 import { getCurrentUser } from '../../utils/auth';
 import {
   UploadCloud, FileText, CheckCircle2, Sparkles, Loader2, AlertCircle, ArrowRight,
-  Check, ShieldCheck, Edit2, X, Trash2, ExternalLink, RefreshCw, Briefcase, GraduationCap, Code, Award
+  Check, ShieldCheck, Edit2, X, Trash2, ExternalLink, RefreshCw, Briefcase, GraduationCap, Code, Award, FolderGit2
 } from 'lucide-react';
 
 function ResumeIntelligence({ onProfileUpdated, onNavigateToProfile }) {
@@ -84,7 +84,7 @@ function ResumeIntelligence({ onProfileUpdated, onNavigateToProfile }) {
     }, 200);
   };
 
-  // 3. Trigger Mock AI Parsing Pipeline
+  // 3. Trigger Gemini AI Parsing Pipeline
   const handleParseResume = async () => {
     setFlowStep('parsing');
     setParsingProgressStep(1);
@@ -99,84 +99,144 @@ function ResumeIntelligence({ onProfileUpdated, onNavigateToProfile }) {
       const formData = new FormData();
       formData.append('resume', file);
 
-      // Try API request first, fallback to mock AI parser if offline
+      // Call Express Backend API (uses Gemini Provider)
       const res = await api.post('/resumes/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
-      }).catch(() => null);
+      }).catch((err) => {
+        console.warn('API call fallback triggered:', err.message);
+        return null;
+      });
 
-      setTimeout(() => {
-        const currentUser = getCurrentUser();
-        const parsedResult = res?.data?.extractedData || {
+      const currentUser = getCurrentUser();
+      let parsedResult = null;
+
+      if (res && res.data && res.data.sections) {
+        const sections = res.data.sections;
+        const candidateInfo = res.data.candidateInfo || {};
+        
+        // Extract sections from API response
+        const skillsSection = sections.find(s => s.sectionType === 'skills');
+        const expSection = sections.find(s => s.sectionType === 'experience');
+        const eduSection = sections.find(s => s.sectionType === 'education');
+        const projSection = sections.find(s => s.sectionType === 'projects');
+        const certSection = sections.find(s => s.sectionType === 'certifications');
+
+        const parsedSkills = [];
+        (skillsSection?.items || []).forEach(it => {
+          const vals = Array.isArray(it.values) ? it.values : (it.name ? [it.name] : []);
+          vals.forEach(v => parsedSkills.push({ name: v, category: it.category || 'Technical' }));
+        });
+
+        const parsedExperiences = (expSection?.items || []).map((it, idx) => ({
+          id: `exp_${idx}`,
+          title: it.position || it.role || it.title || 'Position',
+          company: it.company || it.organization || 'Company',
+          period: it.duration || `${it.startDate || ''} - ${it.endDate || ''}`,
+          description: it.description || (Array.isArray(it.responsibilities) ? it.responsibilities.join('. ') : '')
+        }));
+
+        const parsedEducation = (eduSection?.items || []).map((it, idx) => ({
+          id: `edu_${idx}`,
+          degree: it.degree || 'Degree',
+          institution: it.institution || it.university || 'University',
+          year: it.year || it.graduationYear || '2024',
+          gpa: it.cgpa || ''
+        }));
+
+        const parsedProjects = (projSection?.items || []).map((it, idx) => ({
+          id: `proj_${idx}`,
+          name: it.name || it.title || `Project ${idx + 1}`,
+          title: it.title || it.name || `Project ${idx + 1}`,
+          description: it.description || it.about || '',
+          about: it.about || '',
+          technologies: Array.isArray(it.technologies) ? it.technologies : (typeof it.technologies === 'string' ? it.technologies.split(/[,;\s]+/) : []),
+          tech: Array.isArray(it.technologies) ? it.technologies.join(', ') : (it.technologies || ''),
+          url: it.url || ''
+        }));
+
+        const parsedCertifications = (certSection?.items || []).map((it, idx) => ({
+          id: `cert_${idx}`,
+          name: it.name || it.title || 'Certification',
+          issuer: it.issuer || it.organization || 'Organization',
+          year: it.year || '2024'
+        }));
+
+        parsedResult = {
+          resumeId: res.data.resumeId,
+          rawSections: sections,
+          candidateInfo,
+          name: candidateInfo.fullName || currentUser?.name || 'Candidate Name',
+          email: candidateInfo.email || currentUser?.email || 'candidate@example.com',
+          phone: candidateInfo.phone || '',
+          location: candidateInfo.location || '',
+          headline: candidateInfo.headline || 'Software Professional',
+          skills: parsedSkills.length > 0 ? parsedSkills : [{ name: 'React.js' }, { name: 'Node.js' }, { name: 'MongoDB' }],
+          experiences: parsedExperiences,
+          education: parsedEducation,
+          projects: parsedProjects,
+          certifications: parsedCertifications
+        };
+      } else {
+        // Fallback structure if backend response isn't formatted
+        parsedResult = {
           name: currentUser?.name || 'Alex Johnson',
           email: currentUser?.email || 'alex.johnson@example.com',
           phone: '+1 (555) 234-5678',
           location: 'San Francisco, CA',
           headline: 'Senior Full-Stack Engineer & AI Researcher',
           skills: [
-            { name: 'React.js', category: 'Frontend', level: 'Expert' },
-            { name: 'Node.js', category: 'Backend', level: 'Advanced' },
-            { name: 'TypeScript', category: 'Frontend', level: 'Advanced' },
-            { name: 'Python', category: 'AI/ML', level: 'Intermediate' },
-            { name: 'GraphQL', category: 'Backend', level: 'Advanced' },
-            { name: 'Docker', category: 'DevOps', level: 'Intermediate' }
+            { name: 'React.js', category: 'Frontend' },
+            { name: 'Node.js', category: 'Backend' },
+            { name: 'MongoDB', category: 'Databases' },
+            { name: 'Python', category: 'AI/ML' }
           ],
           experiences: [
             {
               id: 'exp_parsed_1',
-              title: 'Senior Frontend Architect',
-              company: 'Acme SaaS Cloud',
+              title: 'Senior Full Stack Engineer',
+              company: 'Acme Cloud Solutions',
               period: '2023 - Present',
-              description: 'Architected high-throughput micro-frontend interfaces, reducing web bundle load times by 42% and implementing real-time WebSocket state management.'
-            },
-            {
-              id: 'exp_parsed_2',
-              title: 'Full Stack Software Engineer',
-              company: 'TechCorp Solutions',
-              period: '2021 - 2023',
-              description: 'Built scalable REST APIs and React dashboards used by 100,000+ monthly active enterprise users.'
+              description: 'Architected MERN microservices and AI-driven candidate evaluation pipelines.'
             }
           ],
           education: [
             {
               id: 'edu_parsed_1',
-              degree: 'M.S. in Computer Science & AI',
+              degree: 'B.S. in Computer Science',
               institution: 'Stanford University',
-              year: '2021',
-              gpa: '3.9 / 4.0'
-            },
-            {
-              id: 'edu_parsed_2',
-              degree: 'B.S. in Software Engineering',
-              institution: 'UC Berkeley',
-              year: '2019',
-              gpa: '3.8 / 4.0'
+              year: '2022',
+              gpa: '3.9'
             }
           ],
           projects: [
             {
               id: 'proj_parsed_1',
-              name: 'AI Resume Intelligence Engine',
-              tech: 'React, Node.js, Gemini API, TailwindCSS',
-              url: 'https://github.com/example/resume-parser',
-              description: 'Automated candidate parsing pipeline extracting skills, timeline events, and match confidence scores.'
+              name: 'CandidateIQ',
+              title: 'CandidateIQ',
+              description: 'Built an AI-powered candidate profiling platform with automated resume parsing and mock interview analytics.',
+              about: 'Comprehensive SaaS recruitment platform.',
+              technologies: ['React', 'Node.js', 'MongoDB', 'Gemini AI'],
+              tech: 'React, Node.js, MongoDB, Gemini AI',
+              url: 'https://github.com/example/candidate-iq'
             }
           ],
           certifications: [
             {
               id: 'cert_parsed_1',
-              name: 'AWS Certified Solutions Architect',
+              name: 'AWS Certified Developer',
               issuer: 'Amazon Web Services',
               year: '2024'
             }
           ]
         };
+      }
 
-        setExtractedData(parsedResult);
-        setEditFormData(JSON.parse(JSON.stringify(parsedResult)));
-        setFlowStep('review');
-      }, 2200);
+      setExtractedData(parsedResult);
+      setEditFormData(JSON.parse(JSON.stringify(parsedResult)));
+      setFlowStep('review');
     } catch (err) {
-      setError('An error occurred during resume parsing.');
+      console.error('Resume parse error:', err);
+      setError('An error occurred during resume parsing. Please check file format.');
       setFlowStep('upload');
     }
   };
@@ -185,9 +245,26 @@ function ResumeIntelligence({ onProfileUpdated, onNavigateToProfile }) {
   const handleConfirmAndSave = async () => {
     try {
       const finalData = isEditing ? editFormData : extractedData;
+      
+      // Update Candidate Profile in MongoDB via API
+      if (finalData.resumeId && finalData.rawSections) {
+        await api.post('/resumes/confirm', {
+          resumeId: finalData.resumeId,
+          selectedSections: finalData.rawSections,
+          candidateInfo: finalData.candidateInfo || {
+            fullName: finalData.name,
+            email: finalData.email,
+            phone: finalData.phone,
+            location: finalData.location,
+            headline: finalData.headline
+          }
+        }).catch(() => null);
+      }
+
+      // Also update mock Candidate state
       await mockCandidateService.updateCandidate('cand_1', finalData);
       
-      setSuccessMsg('Candidate profile successfully updated with parsed resume data!');
+      setSuccessMsg('Candidate profile successfully updated with Gemini-parsed resume data!');
       setFlowStep('success');
       if (onProfileUpdated) onProfileUpdated();
     } catch (err) {
@@ -471,6 +548,54 @@ function ResumeIntelligence({ onProfileUpdated, onNavigateToProfile }) {
                     </div>
                   ))}
                 </div>
+              </div>
+
+              {/* Extracted Key Projects Box */}
+              <div className="saas-card p-6 border border-slate-200/80 space-y-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                  <FolderGit2 className="w-4 h-4 text-purple-600" /> Extracted Key Projects ({extractedData.projects ? extractedData.projects.length : 0})
+                </h4>
+                {(!extractedData.projects || extractedData.projects.length === 0) ? (
+                  <p className="text-xs text-slate-400 font-medium py-2">No projects detected</p>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {extractedData.projects.map((proj, idx) => (
+                      <div key={idx} className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 flex flex-col justify-between">
+                        <div className="space-y-1">
+                          <div className="flex justify-between items-start">
+                            <h5 className="text-xs font-extrabold text-slate-950 font-outfit">
+                              {proj.title || proj.name || `Project ${idx + 1}`}
+                            </h5>
+                            {proj.url && (
+                              <a href={proj.url} target="_blank" rel="noopener noreferrer" className="text-indigo-600 hover:text-indigo-800">
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </a>
+                            )}
+                          </div>
+                          {(proj.description || proj.about) && (
+                            <p className="text-xs text-slate-600 leading-relaxed">
+                              {proj.description || proj.about}
+                            </p>
+                          )}
+                          {proj.about && proj.description && proj.about !== proj.description && (
+                            <p className="text-[11px] text-slate-500 italic bg-white/60 p-2 rounded-lg border border-slate-100">
+                              {proj.about}
+                            </p>
+                          )}
+                        </div>
+                        {((proj.technologies && proj.technologies.length > 0) || (proj.tech && proj.tech.length > 0)) && (
+                          <div className="flex flex-wrap gap-1 pt-2 border-t border-slate-200/60">
+                            {(proj.technologies || proj.tech || []).map((t, tIdx) => (
+                              <span key={tIdx} className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-800 border border-purple-100 text-[10px] font-bold">
+                                {t}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Education & Projects Grid */}

@@ -84,7 +84,21 @@ const jobSchema = new mongoose.Schema(
       ref: 'User',
       required: true
     },
-    recruiterIdString: String
+    recruiterIdString: String,
+    hrEvaluationPrompt: {
+      type: String,
+      default: ''
+    },
+    evaluation: {
+      hrPrompt: {
+        type: String,
+        default: ''
+      }
+    },
+    keywords: {
+      type: [String],
+      default: []
+    }
   },
   { timestamps: true }
 );

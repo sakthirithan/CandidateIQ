@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
 import {
   mockInterviewService,
   extractAIFeaturesFromJD,
@@ -10,6 +11,7 @@ import {
 import { mockJobService } from '../../services/mockApi/jobService';
 import { mockCandidateService } from '../../services/mockApi/candidateService';
 import { getCurrentUser } from '../../utils/auth';
+import { formatExperience, renderSafeText } from '../../utils/formatters';
 import {
   subscribeToStorage,
   saveMockInterviewAttempt,
@@ -56,12 +58,37 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
   const [pendingNextIndex, setPendingNextIndex] = useState(null);
   const [customQuestionBanks, setCustomQuestionBanks] = useState([]);
 
+  const PIPELINE_STAGES = [
+    { key: 'INITIALIZING', label: 'Initializing Pipeline' },
+    { key: 'LOADING_RESUME', label: 'Candidate Resume Loaded' },
+    { key: 'LOADING_JOB', label: 'Job Description Loaded' },
+    { key: 'ANALYZING_RESUME', label: 'Resume Analyzed' },
+    { key: 'ANALYZING_JOB', label: 'Job Description Analyzed' },
+    { key: 'EXTRACTING_TOPICS', label: 'Skills & Topics Extracted' },
+    { key: 'BUILDING_CONTEXT', label: 'AI Context Prepared' },
+    { key: 'GENERATING_QUESTIONS', label: 'Generating Interview Questions' },
+    { key: 'VALIDATING_QUESTIONS', label: 'Validating Questions' },
+    { key: 'PREPARING_ASSESSMENT', label: 'Preparing Assessment' },
+    { key: 'SAVING_INTERVIEW', label: 'Saving to Database' },
+    { key: 'SAVING_QUESTIONS', label: 'Saving Questions to MongoDB' },
+    { key: 'COMPLETED', label: 'Interview Ready' }
+  ];
+
   // AI Feature Extraction & Generation Progress State
   const [aiFeatures, setAiFeatures] = useState(null);
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [generationElapsed, setGenerationElapsed] = useState(0);
-  const [generationPhase, setGenerationPhase] = useState(1); // 1: Analyzing, 2: Extracting, 3: Creating, 4: Done
   const [generationError, setGenerationError] = useState(null);
+  const [generationState, setGenerationState] = useState({
+    status: 'idle',
+    stage: 'INITIALIZING',
+    progress: 0,
+    message: '',
+    completedStages: [],
+    startedAt: null,
+    error: null,
+    questionCounts: { mcq: 0, voice: 0, text: 0, total: 0 }
+  });
 
   // Guidelines Checkboxes State (ALL 4 REQUIRED)
   const [guidelinesCheckboxes, setGuidelinesCheckboxes] = useState({
@@ -75,6 +102,38 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
   const [currentAttempt, setCurrentAttempt] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
 
+  // Voice Recording & Real Speech-to-Text State & Refs
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceStatus, setVoiceStatus] = useState('idle'); // 'idle' | 'permission' | 'recording' | 'processing' | 'completed' | 'error'
+  const [voiceDuration, setVoiceDuration] = useState(0);
+  const [voiceError, setVoiceError] = useState(null);
+
+  const mediaRecorderRef = React.useRef(null);
+  const mediaStreamRef = React.useRef(null);
+  const recognitionRef = React.useRef(null);
+  const voiceTimerRef = React.useRef(null);
+
+  // Recording Timer Effect
+  useEffect(() => {
+    if (isRecording) {
+      voiceTimerRef.current = setInterval(() => {
+        setVoiceDuration((prev) => prev + 1);
+      }, 1000);
+    } else {
+      if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    }
+    return () => {
+      if (voiceTimerRef.current) clearInterval(voiceTimerRef.current);
+    };
+  }, [isRecording]);
+
+  // Clean up Media Stream and Speech Recognition on unmount
+  useEffect(() => {
+    return () => {
+      stopVoiceRecordingCleanup();
+    };
+  }, []);
+
   // Local draft inputs for current question (NOT saved until Submit is clicked!)
   const [draftMcqOption, setDraftMcqOption] = useState('');
   const [draftTextAnswer, setDraftTextAnswer] = useState('');
@@ -84,7 +143,6 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
   const [submittedAnswers, setSubmittedAnswers] = useState({});
 
   const [submitting, setSubmitting] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
   const [testSecondsElapsed, setTestSecondsElapsed] = useState(0);
   const [tabSwitchCount, setTabSwitchCount] = useState(0);
 
@@ -105,13 +163,13 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
     return () => unsubscribe();
   }, []);
 
-  const loadMockList = () => {
+  const loadMockList = async () => {
     try {
       setLoading(true);
-      const list = getMockInterviewAttempts();
+      const list = await mockInterviewService.getCandidateInterviews();
       setMockAttemptsList(list || []);
     } catch (err) {
-      console.error(err);
+      console.error('Failed to load candidate interview attempts:', err);
     } finally {
       setLoading(false);
     }
@@ -136,17 +194,19 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
     }
   }, [initialJobData]);
 
-  // Generation Elapsed Timer Effect
+  // Generation Elapsed Timer Effect (uses real start timestamp)
   useEffect(() => {
     let timer;
-    if (flowStep === 'generating') {
-      setGenerationElapsed(0);
+    if (flowStep === 'generating' && generationState.startedAt && generationState.stage !== 'COMPLETED' && generationState.stage !== 'FAILED') {
+      const startMs = new Date(generationState.startedAt).getTime();
       timer = setInterval(() => {
-        setGenerationElapsed((prev) => prev + 1);
+        const now = Date.now();
+        const elapsedSecs = Math.max(0, Math.floor((now - startMs) / 1000));
+        setGenerationElapsed(elapsedSecs);
       }, 1000);
     }
     return () => clearInterval(timer);
-  }, [flowStep]);
+  }, [flowStep, generationState.startedAt, generationState.stage]);
 
   // Test Mode Timer Effect (derives elapsed time from attempt.startedAt)
   useEffect(() => {
@@ -233,81 +293,180 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
     setFlowStep('creation_popup');
   };
 
-  // 3. EXECUTE AI PIPELINE ON CREATE CONFIRMATION
+  // 3. GENERATE & PERSIST MOCK INTERVIEW VIA BACKEND API
   const handleConfirmCreateMockInterview = async () => {
-    const jobTitleToUse = creationSource === 'RECRUITER_JOB' ? selectedJob.title : customTitle;
-    const jdToUse = creationSource === 'RECRUITER_JOB' ? (selectedJob.description || selectedJob.jobDescription) : customJobDescription;
+    const jobTitleToUse = creationSource === 'RECRUITER_JOB' ? selectedJob?.title : customTitle;
+    const jdToUse = creationSource === 'RECRUITER_JOB' ? (selectedJob?.description || selectedJob?.jobDescription) : customJobDescription;
 
-    if (!jobTitleToUse.trim() || !jdToUse.trim()) return;
+    if (!jobTitleToUse || !jdToUse) return;
+
+    const startedAtIso = new Date().toISOString();
+    setFlowStep('generating');
+    setGenerationError(null);
+    setGenerationElapsed(0);
+    setGenerationState({
+      status: 'generating',
+      stage: 'INITIALIZING',
+      progress: 5,
+      message: 'Initializing AI Mock Interview generation...',
+      completedStages: ['INITIALIZING'],
+      startedAt: startedAtIso,
+      error: null,
+      questionCounts: { mcq: 0, voice: 0, text: 0, total: 0 }
+    });
 
     try {
-      setFlowStep('generating');
-      setGenerationError(null);
-      setGenerationPhase(1);
-
-      // Step 1: Analyzing Job Description
-      await new Promise((r) => setTimeout(r, 500));
-      setGenerationPhase(2);
-
-      // Step 2: Extracting Features (returns keywords, topics, technicalSkills, concepts, responsibilities, tools, frameworks, domainKnowledge)
+      const methodCfg = METHOD_CONFIG[selectedMethod] || METHOD_CONFIG.RANDOM;
       const features = extractAIFeaturesFromJD(jdToUse);
       setAiFeatures(features);
-      await new Promise((r) => setTimeout(r, 600));
-      setGenerationPhase(3);
 
-      // Step 3: Question Blueprint & Generation respecting candidate profile, primary resume & JD
+      const response = await api.post('/mock-interviews', {
+        jobId: creationSource === 'RECRUITER_JOB' ? selectedJob?.id || selectedJob?._id : undefined,
+        configuration: {
+          difficulty: selectedDifficulty.toLowerCase(),
+          assessmentMethod: selectedMethod.toLowerCase(),
+          totalQuestions: methodCfg.totalCount || 20,
+          sections: methodCfg.sections || [
+            { type: 'mcq', count: 15 },
+            { type: 'voice', count: 3 },
+            { type: 'text', count: 2 }
+          ]
+        }
+      });
+
+      const createdDoc = response.data?.interview || response.data?.data?.interview;
+      const mockInterviewId = response.data?.mockInterviewId || response.data?.data?.mockInterviewId || createdDoc?._id;
+
       let questions = [];
-      try {
-        const currentUser = getCurrentUser();
-        const candId = currentUser?.id || 'cand_1';
-        const candProfile = await mockCandidateService.getCandidateById(candId);
-        const primaryRes = storageResumes.getPrimaryByCandidateId(candId);
-        const missingSkills = (selectedJob?.requiredSkills || []).filter(
-          (req) => !(candProfile?.skills || []).some((s) => (s.name || s).toLowerCase().includes(req.toLowerCase()))
-        );
+      let counts = { mcq: 0, voice: 0, text: 0, total: 0 };
 
-        questions = generateQuestionsFromJD({
-          jobDescriptionSnapshot: jdToUse,
-          targetJobTitle: jobTitleToUse,
-          questionType: selectedMethod,
-          difficulty: selectedDifficulty,
-          questionCount: METHOD_CONFIG[selectedMethod]?.totalCount || 20,
-          candidateProfile: candProfile,
-          resumeAnalysis: primaryRes?.parsedData || null,
-          missingSkills
-        });
-      } catch (err) {
-        // Fallback AI Provider if generation error
-        const fallbackRes = await fallbackAIProvider({
-          jobTitle: jobTitleToUse,
-          jobDescription: jdToUse,
-          difficulty: selectedDifficulty,
-          method: selectedMethod
-        });
-        questions = fallbackRes.questions;
+      if (createdDoc && createdDoc.questions && Array.isArray(createdDoc.questions) && createdDoc.questions.length > 0) {
+        questions = (createdDoc.questions || []).map((q, idx) => ({
+          id: q.questionId || q._id || `q_${idx + 1}`,
+          questionId: q.questionId || q._id || `q_${idx + 1}`,
+          questionNumber: idx + 1,
+          category: q.category || 'mcq',
+          questionType: q.category === 'mcq' ? 'MCQ' : (q.category === 'voice' ? 'Voice' : 'Text'),
+          targetSkill: q.targetSkill || q.sourceKeyword || 'Software Engineering',
+          questionText: q.questionText || q.question,
+          options: (q.options || []).map(opt => typeof opt === 'string' ? opt : opt.text),
+          correctAnswer: q.correctAnswer
+        }));
+
+        const mcqCount = (createdDoc.mock_interview_questions?.mcq || []).length || questions.filter(q => q.category === 'mcq').length;
+        const voiceCount = (createdDoc.mock_interview_questions?.voice || []).length || questions.filter(q => q.category === 'voice').length;
+        const textCount = (createdDoc.mock_interview_questions?.text || []).length || questions.filter(q => q.category === 'text').length;
+        counts = { mcq: mcqCount, voice: voiceCount, text: textCount, total: questions.length };
       }
 
       setGeneratedQuestions(questions);
-      await new Promise((r) => setTimeout(r, 500));
-      setGenerationPhase(4);
 
-      // Transition to Guidelines / Assessment Preview Screen
-      setGuidelinesCheckboxes({ format: false, submission: false, timer: false, ready: false });
-      setFlowStep('guidelines');
+      // Connect SSE for real-time stage progress updates if available
+      const token = localStorage.getItem('token') || '';
+      if (mockInterviewId && token) {
+        const sseUrl = `/api/mock-interviews/${mockInterviewId}/generation-progress?token=${encodeURIComponent(token)}`;
+        const eventSource = new EventSource(sseUrl);
+
+        eventSource.addEventListener('generation-progress', (e) => {
+          try {
+            const data = JSON.parse(e.data);
+            setGenerationState((prev) => ({
+              ...prev,
+              stage: data.stage || prev.stage,
+              progress: data.progress !== undefined ? data.progress : prev.progress,
+              message: data.message || prev.message,
+              completedStages: data.completedStages || prev.completedStages,
+              questionCounts: counts
+            }));
+
+            if (data.stage === 'COMPLETED' || data.progress === 100) {
+              eventSource.close();
+              finalizeAndNavigateToGuidelines(createdDoc, questions, mockInterviewId, jobTitleToUse, jdToUse, methodCfg, features);
+            } else if (data.stage === 'FAILED') {
+              eventSource.close();
+              setGenerationError(data.message || 'Generation failed.');
+              setGenerationState((prev) => ({ ...prev, status: 'failed', stage: 'FAILED' }));
+            }
+          } catch (err) {
+            console.warn('SSE parse warning:', err);
+          }
+        });
+
+        eventSource.onerror = () => {
+          eventSource.close();
+        };
+      }
+
+      // If document is already verified and ready:
+      if (createdDoc && createdDoc.status === 'ready' && questions.length > 0) {
+        setGenerationState((prev) => ({
+          ...prev,
+          status: 'completed',
+          stage: 'COMPLETED',
+          progress: 100,
+          message: 'Your mock interview is ready.',
+          completedStages: PIPELINE_STAGES.map((s) => s.key),
+          questionCounts: counts
+        }));
+
+        setTimeout(() => {
+          finalizeAndNavigateToGuidelines(createdDoc, questions, mockInterviewId, jobTitleToUse, jdToUse, methodCfg, features);
+        }, 500);
+      }
     } catch (err) {
-      console.error('AI Pipeline Failure:', err);
-      // Fallback AI Provider Recovery
-      const fallbackRes = await fallbackAIProvider({
-        jobTitle: jobTitleToUse,
-        jobDescription: jdToUse,
-        difficulty: selectedDifficulty,
-        method: selectedMethod
-      });
-      setAiFeatures(fallbackRes.extractedFeatures);
-      setGeneratedQuestions(fallbackRes.questions);
-      setGuidelinesCheckboxes({ format: false, submission: false, timer: false, ready: false });
-      setFlowStep('guidelines');
+      console.error('AI Pipeline Generation Error:', err);
+      const errMsg = err.response?.data?.message || err.message || 'Unable to generate mock interview.';
+      setGenerationError(errMsg);
+      setGenerationState((prev) => ({
+        ...prev,
+        status: 'failed',
+        stage: 'FAILED',
+        progress: 0,
+        message: errMsg
+      }));
     }
+  };
+
+  const finalizeAndNavigateToGuidelines = (createdDoc, questions, mockInterviewId, jobTitleToUse, jdToUse, methodCfg, features) => {
+    const attemptObj = {
+      attemptId: createdDoc?._id || mockInterviewId || `mock_att_${Date.now()}`,
+      id: createdDoc?._id || mockInterviewId || `mock_att_${Date.now()}`,
+      sessionId: createdDoc?._id || mockInterviewId || `mock_att_${Date.now()}`,
+      _id: createdDoc?._id || mockInterviewId,
+      source: creationSource,
+      jobId: creationSource === 'RECRUITER_JOB' ? selectedJob?.id || selectedJob?._id : null,
+      title: jobTitleToUse,
+      jobTitle: jobTitleToUse,
+      jobDescription: jdToUse,
+      company: creationSource === 'RECRUITER_JOB' ? (selectedJob?.company || 'Recruiter Requisition') : 'Custom Requisition',
+      difficulty: selectedDifficulty,
+      method: selectedMethod,
+      sections: methodCfg?.sections || [],
+      extractedFeatures: features,
+      questions: (questions || []).map((q, idx) => ({
+        id: q.id || q.questionId || `q_${idx + 1}`,
+        questionId: q.questionId || q.id || `q_${idx + 1}`,
+        questionNumber: idx + 1,
+        category: q.category || 'mcq',
+        questionType: q.questionType || (q.category === 'mcq' ? 'MCQ' : q.category === 'voice' ? 'Voice' : 'Text'),
+        targetSkill: q.targetSkill || 'Technical',
+        questionText: q.questionText || q.question || '',
+        options: (q.options || []).map(opt => typeof opt === 'string' ? opt : opt.text),
+        correctAnswer: q.correctAnswer
+      })),
+      answers: [],
+      startedAt: new Date().toISOString(),
+      finishedAt: null,
+      duration: methodCfg?.estimatedDuration || 30,
+      timerMinutes: methodCfg?.estimatedDuration || 30,
+      status: 'ready',
+      state: 'Ready',
+      result: null
+    };
+
+    setCurrentAttempt(attemptObj);
+    setGuidelinesCheckboxes({ format: false, submission: false, timer: false, ready: false });
+    setFlowStep('guidelines');
   };
 
   const handleRetryGeneration = () => {
@@ -315,53 +474,35 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
   };
 
   // 4. LAUNCH MOCK INTERVIEW ATTEMPT
-  const handleLaunchMockInterview = () => {
+  const handleLaunchMockInterview = async () => {
     const allChecked = guidelinesCheckboxes.format && guidelinesCheckboxes.submission && guidelinesCheckboxes.timer && guidelinesCheckboxes.ready;
     if (!allChecked) return;
 
-    const newAttemptId = `mock_att_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-    const methodCfg = METHOD_CONFIG[selectedMethod] || METHOD_CONFIG.RANDOM;
+    const attemptId = currentAttempt?.sessionId || currentAttempt?.id || currentAttempt?._id;
 
-    const jobTitleToUse = creationSource === 'RECRUITER_JOB' ? selectedJob.title : customTitle;
-    const jdToUse = creationSource === 'RECRUITER_JOB' ? (selectedJob.description || selectedJob.jobDescription) : customJobDescription;
-    const companyToUse = creationSource === 'RECRUITER_JOB' ? (selectedJob.company || 'Recruiter Requisition') : 'Custom Requisition';
+    if (attemptId && attemptId.length === 24) {
+      try {
+        await api.post(`/mock-interviews/${attemptId}/start`);
+      } catch (err) {
+        console.warn('Backend /mock-interviews/start call notice:', err);
+      }
+    }
 
-    const newAttempt = {
-      attemptId: newAttemptId,
-      id: newAttemptId,
-      sessionId: newAttemptId,
-      source: creationSource,
-      jobId: creationSource === 'RECRUITER_JOB' ? selectedJob.id : null,
-      userId: 'cand_1',
-      candidateId: 'cand_1',
-      title: jobTitleToUse,
-      jobTitle: jobTitleToUse,
-      jobDescription: jdToUse,
-      company: companyToUse,
-      difficulty: selectedDifficulty,
-      method: selectedMethod,
-      sections: methodCfg.sections,
-      extractedFeatures: aiFeatures,
-      questions: generatedQuestions,
-      answers: [],
-      startedAt: new Date().toISOString(),
-      finishedAt: null,
-      duration: methodCfg.estimatedDuration || 30,
-      timerMinutes: methodCfg.estimatedDuration || 30,
+    const updatedAttempt = {
+      ...currentAttempt,
       status: 'in-progress',
       state: 'In Progress',
-      result: null
+      startedAt: new Date().toISOString()
     };
 
-    saveMockInterviewAttempt(newAttempt);
-    setCurrentAttempt(newAttempt);
+    saveMockInterviewAttempt(updatedAttempt);
+    setCurrentAttempt(updatedAttempt);
     setSubmittedAnswers({});
     setCurrentQuestionIndex(0);
     setTestSecondsElapsed(0);
     setTabSwitchCount(0);
     setFlowStep('testing');
 
-    // Request browser fullscreen if available
     if (document.documentElement.requestFullscreen) {
       document.documentElement.requestFullscreen().catch(() => {});
     }
@@ -424,6 +565,22 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
         answers: answersArray
       });
 
+      // Persist to MongoDB via Backend API
+      const attemptId = currentAttempt.attemptId || currentAttempt._id || currentAttempt.id;
+      if (attemptId && attemptId.length === 24) {
+        try {
+          await api.patch(`/mock-interviews/${attemptId}/questions/${qId}/answer`, {
+            selectedOption: payload.selectedOption,
+            textAnswer: payload.textAnswer,
+            voiceTranscript: payload.voiceTranscript,
+            answer: payload.answer,
+            durationSeconds: voiceDuration
+          });
+        } catch (backendErr) {
+          console.warn('Backend API patch answer notice:', backendErr);
+        }
+      }
+
       // Automatically advance to next unsubmitted question if available
       if (currentQuestionIndex + 1 < currentAttempt.questions.length) {
         setCurrentQuestionIndex(currentQuestionIndex + 1);
@@ -432,6 +589,128 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
       console.error('Error submitting answer:', err);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // Real Voice Recording & Web Speech API Implementation
+  const stopVoiceRecordingCleanup = () => {
+    if (recognitionRef.current) {
+      try { recognitionRef.current.stop(); } catch (e) {}
+      recognitionRef.current = null;
+    }
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+      mediaRecorderRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+  };
+
+  const handleStartVoiceRecording = async () => {
+    setVoiceError(null);
+    setVoiceStatus('permission');
+
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Microphone API is not supported in this browser environment. Please use Chrome, Edge, or Firefox.');
+      }
+
+      // 1. Request Microphone Permission & Audio Stream
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      // 2. Select Supported Audio MIME Type
+      const mimeTypes = [
+        'audio/webm;codecs=opus',
+        'audio/webm',
+        'audio/mp4',
+        'audio/ogg;codecs=opus',
+        'audio/wav'
+      ];
+      const selectedMime = mimeTypes.find((type) => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) || '';
+
+      const recorder = new MediaRecorder(stream, selectedMime ? { mimeType: selectedMime } : undefined);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = () => {};
+
+      recorder.onstop = () => {
+        setVoiceStatus('processing');
+        if (mediaStreamRef.current) {
+          mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+          mediaStreamRef.current = null;
+        }
+        setVoiceStatus('completed');
+      };
+
+      recorder.start(250);
+
+      // 3. Initialize Real-Time Web Speech API Recognition
+      const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (SpeechRecognition) {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        let accumulatedTranscript = draftVoiceTranscript || '';
+
+        recognition.onresult = (event) => {
+          let interimText = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcriptChunk = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              accumulatedTranscript += (accumulatedTranscript ? ' ' : '') + transcriptChunk;
+            } else {
+              interimText += transcriptChunk;
+            }
+          }
+          const currentText = (accumulatedTranscript + (interimText ? ' ' + interimText : '')).trim();
+          setDraftVoiceTranscript(currentText);
+        };
+
+        recognition.onerror = (event) => {
+          console.warn('Speech recognition notice:', event.error);
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+      }
+
+      setIsRecording(true);
+      setVoiceStatus('recording');
+      setVoiceDuration(0);
+    } catch (err) {
+      console.error('Microphone access error:', err);
+      let msg = 'Microphone access is required for voice interviews.';
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        msg = 'Microphone permission was denied. Please allow microphone access in your browser settings and try again.';
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        msg = 'No active microphone device was found. Please connect a microphone and try again.';
+      } else if (err.message) {
+        msg = err.message;
+      }
+      setVoiceError(msg);
+      setVoiceStatus('error');
+      setIsRecording(false);
+      stopVoiceRecordingCleanup();
+    }
+  };
+
+  const handleStopVoiceRecording = () => {
+    setIsRecording(false);
+    setVoiceStatus('processing');
+    stopVoiceRecordingCleanup();
+    setVoiceStatus('completed');
+  };
+
+  const handleToggleVoiceRecording = () => {
+    if (isRecording) {
+      handleStopVoiceRecording();
+    } else {
+      handleStartVoiceRecording();
     }
   };
 
@@ -634,7 +913,7 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {availableJobs.map((job) => (
+              {(availableJobs || []).map((job) => (
                 <div
                   key={job.id}
                   className="saas-card p-6 border border-slate-200/90 hover:border-indigo-300 bg-white rounded-2xl space-y-4 shadow-xs hover:shadow-md transition-all flex flex-col justify-between"
@@ -649,18 +928,18 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
                         <p className="text-xs font-semibold text-slate-600">{job.company || 'CandidateIQ Enterprise'} &bull; {job.location || 'Remote'}</p>
                       </div>
                       <span className="badge-pill bg-slate-100 text-slate-700 border-slate-200 text-[10px] font-mono">
-                        {job.experience || '3-5 Yrs Exp'}
+                        {formatExperience(job.experience, typeof job.experience === 'string' ? job.experience : '3-5 Yrs Exp')}
                       </span>
                     </div>
 
                     <p className="text-xs text-slate-500 leading-relaxed font-medium line-clamp-3 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                      {job.description || job.jobDescription || 'Senior engineering requisition focusing on high performance web architecture and AI endpoint integration.'}
+                      {renderSafeText(job.description || job.jobDescription || 'Senior engineering requisition focusing on high performance web architecture and AI endpoint integration.')}
                     </p>
 
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       {(job.skills || ['React.js', 'Node.js', 'MongoDB', 'REST API']).map((sk, sIdx) => (
                         <span key={sIdx} className="px-2 py-0.5 rounded-lg bg-indigo-50/70 text-indigo-800 text-[10px] font-bold border border-indigo-100">
-                          {sk}
+                          {renderSafeText(sk)}
                         </span>
                       ))}
                     </div>
@@ -707,7 +986,7 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {mockAttemptsList.map((att) => {
+              {(mockAttemptsList || []).map((att) => {
                 const attId = att.attemptId || att.id || att.sessionId;
                 const isCompleted = att.status === 'completed' || att.status === 'Completed' || att.state === 'Completed';
                 const totalQ = att.questions?.length || 10;
@@ -913,62 +1192,141 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
 
       {/* STEP 2: AI FEATURE EXTRACTION & QUESTION GENERATION TIMER SCREEN */}
       {flowStep === 'generating' && (
-        <div className="saas-card p-8 border border-slate-200/90 space-y-6 bg-white text-center shadow-sm max-w-lg mx-auto rounded-2xl my-8">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 mx-auto">
-            <RefreshCw className="w-8 h-8 animate-spin" />
+        <div className="saas-card p-8 border border-slate-200/90 space-y-6 bg-white shadow-md max-w-xl mx-auto rounded-2xl my-8">
+          <div className="flex flex-col items-center text-center space-y-2">
+            <div className="w-16 h-16 rounded-2xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shadow-xs">
+              <Bot className="w-8 h-8 animate-pulse" />
+            </div>
+
+            <h3 className="text-xl font-extrabold font-outfit text-slate-950">Generating Your Mock Interview</h3>
+            <div className="text-xs text-slate-500 font-semibold space-y-0.5">
+              <p>Target: <strong className="text-slate-900">{creationSource === 'RECRUITER_JOB' ? selectedJob?.title : customTitle}</strong></p>
+              <p className="text-slate-400">{selectedDifficulty} Difficulty &bull; {selectedMethod} Method</p>
+            </div>
           </div>
 
-          <div className="space-y-1">
-            <h3 className="text-xl font-black font-outfit text-slate-950">Generating Your Mock Interview</h3>
-            <p className="text-xs text-slate-500 font-medium">
-              Target: <strong>{creationSource === 'RECRUITER_JOB' ? selectedJob?.title : customTitle}</strong> ({selectedDifficulty} Difficulty &bull; {selectedMethod} Method)
+          {/* Dynamic Stage Message */}
+          <div className="p-4 rounded-xl bg-indigo-50/80 border border-indigo-100 text-center space-y-1">
+            <span className="text-[10px] font-black text-indigo-700 uppercase tracking-wider block">Current AI Process</span>
+            <p className="text-xs font-bold text-indigo-950">
+              {generationState.message || 'AI is building personalized interview context...'}
             </p>
           </div>
 
-          {/* Progress Checklist */}
-          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-left text-xs">
-            <div className="flex justify-between items-center">
-              <span className="font-semibold text-slate-800">Analyzing Job Description</span>
-              <span className="text-emerald-600 font-bold">✓</span>
-            </div>
+          {/* Pipeline Stage Checklist */}
+          <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3 text-left">
+            <h4 className="text-[11px] font-extrabold text-slate-400 uppercase tracking-wider block border-b border-slate-200 pb-2">
+              Generation Progress Pipeline
+            </h4>
 
-            <div className="flex justify-between items-center">
-              <span className="font-semibold text-slate-800">Extracting Skills & Topics</span>
-              <span className={generationPhase >= 2 ? "text-emerald-600 font-bold" : "text-slate-400"}>
-                {generationPhase >= 2 ? "✓" : "○"}
-              </span>
-            </div>
+            <div className="space-y-2 text-xs">
+              {PIPELINE_STAGES.map((stg) => {
+                const completedList = generationState.completedStages || [];
+                const isCompleted = completedList.includes(stg.key) ||
+                  (generationState.stage === 'COMPLETED' && stg.key !== 'FAILED');
+                const isActive = generationState.stage === stg.key && !isCompleted;
+                const isFailed = generationState.stage === 'FAILED';
 
-            <div className="flex justify-between items-center">
-              <span className="font-semibold text-slate-800">Creating Questions ({selectedMethod})</span>
-              <span className={generationPhase >= 3 ? "text-emerald-600 font-bold" : "text-amber-500 font-bold"}>
-                {generationPhase >= 3 ? "✓" : "⏳"}
-              </span>
-            </div>
+                return (
+                  <div key={stg.key} className="flex justify-between items-center">
+                    <span className={`font-semibold flex items-center gap-2 ${
+                      isCompleted ? 'text-slate-800' : isActive ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                    }`}>
+                      {stg.label}
+                    </span>
 
-            <div className="flex justify-between items-center">
-              <span className="font-semibold text-slate-800">Preparing Assessment</span>
-              <span className={generationPhase >= 4 ? "text-emerald-600 font-bold" : "text-slate-400"}>
-                {generationPhase >= 4 ? "✓" : "○"}
-              </span>
+                    <span className="font-mono text-sm font-bold">
+                      {isCompleted ? (
+                        <span className="text-emerald-600">✓</span>
+                      ) : isActive ? (
+                        <RefreshCw className="w-3.5 h-3.5 text-indigo-600 animate-spin inline-block" />
+                      ) : isFailed ? (
+                        <span className="text-rose-600">!</span>
+                      ) : (
+                        <span className="text-slate-300">○</span>
+                      )}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Generated Question Count Breakdown (if available) */}
+          {generatedQuestions && generatedQuestions.length > 0 && (
+            <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 text-emerald-950 text-xs font-semibold space-y-2">
+              <span className="font-extrabold uppercase tracking-wider text-[10px] text-emerald-800 block">Questions Generated</span>
+              <div className="grid grid-cols-4 gap-2 text-center font-mono font-bold">
+                <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                  <span className="text-slate-400 block text-[9px]">MCQ</span>
+                  {generationState.questionCounts?.mcq || generatedQuestions.filter(q => q.category === 'mcq' || q.questionType === 'MCQ').length}
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                  <span className="text-slate-400 block text-[9px]">VOICE</span>
+                  {generationState.questionCounts?.voice || generatedQuestions.filter(q => q.category === 'voice' || q.questionType === 'Voice').length}
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-emerald-200">
+                  <span className="text-slate-400 block text-[9px]">TEXT</span>
+                  {generationState.questionCounts?.text || generatedQuestions.filter(q => q.category === 'text' || q.questionType === 'Text').length}
+                </div>
+                <div className="bg-emerald-600 text-white p-2 rounded-lg border border-emerald-600">
+                  <span className="text-emerald-200 block text-[9px]">TOTAL</span>
+                  {generatedQuestions.length}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Progress Bar & Percentage */}
+          <div className="space-y-2">
+            <div className="flex justify-between items-center text-xs font-bold text-slate-700 font-mono">
+              <span>{generationState.stage || 'PROGRESS'}</span>
+              <span>{generationState.progress || 0}%</span>
+            </div>
+            <div
+              className="w-full bg-slate-100 rounded-full h-3 overflow-hidden border border-slate-200"
+              role="progressbar"
+              aria-valuenow={generationState.progress || 0}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Generation progress bar"
+            >
+              <div
+                className="bg-indigo-600 h-full rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${generationState.progress || 0}%` }}
+              ></div>
             </div>
           </div>
 
           {/* Real Functional Elapsed Time Timer */}
-          <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-900 font-mono font-bold text-xs">
-            Elapsed Time: 00:{generationElapsed.toString().padStart(2, '0')}
+          <div className="p-3 rounded-xl bg-slate-100 border border-slate-200 text-slate-700 font-mono font-bold text-xs flex justify-between items-center">
+            <span className="flex items-center gap-1.5"><Clock className="w-3.5 h-3.5 text-slate-500" /> Elapsed Time:</span>
+            <span className="text-indigo-700">00:{generationElapsed.toString().padStart(2, '0')}</span>
           </div>
 
           {generationError && (
-            <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium space-y-2">
-              <p>{generationError}</p>
-              <button
-                type="button"
-                onClick={handleRetryGeneration}
-                className="px-4 py-1.5 rounded-lg bg-rose-600 text-white font-bold text-xs cursor-pointer"
-              >
-                Retry Question Generation
-              </button>
+            <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium space-y-3">
+              <div className="flex items-center gap-2 font-bold text-rose-900">
+                <AlertCircle className="w-4 h-4 text-rose-600" />
+                <span>Unable to Create Mock Interview</span>
+              </div>
+              <p className="leading-relaxed">{generationError}</p>
+              <div className="flex justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={handleRetryGeneration}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs cursor-pointer shadow-sm"
+                >
+                  Retry Generation
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFlowStep('idle')}
+                  className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs cursor-pointer"
+                >
+                  Back to Dashboard
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1173,7 +1531,7 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
 
                 {/* Question Buttons Grid */}
                 <div className="grid grid-cols-5 gap-2 max-h-[320px] overflow-y-auto pr-1">
-                  {currentAttempt.questions.map((q, idx) => {
+                  {(currentAttempt?.questions || []).map((q, idx) => {
                     const qId = q.id || q.questionId;
                     const isSelected = idx === currentQuestionIndex;
                     const isSubmitted = Boolean(submittedAnswers[qId]);
@@ -1221,14 +1579,13 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
               }`}>
                 <div className="flex justify-between items-center">
                   <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider block">
-                    {currentAttempt.questions[currentQuestionIndex]?.sectionName || 'Question'} &bull; Q{currentQuestionIndex + 1} of {totalQuestionsCount}
+                    {currentAttempt.questions[currentQuestionIndex]?.sectionName || 'Mock Question'} &bull; Q{currentQuestionIndex + 1} of {totalQuestionsCount}
                   </span>
                   <div className="flex items-center gap-2">
-                    {currentAttempt.questions[currentQuestionIndex]?.source && (
+                    {(currentAttempt.questions[currentQuestionIndex]?.sourceKeyword || currentAttempt.questions[currentQuestionIndex]?.targetSkill) && (
                       <span className="badge-pill bg-purple-950 text-purple-300 border-purple-800 text-[10px] font-bold flex items-center gap-1">
                         <Sparkles className="w-3 h-3 text-purple-400" />
-                        Source: {currentAttempt.questions[currentQuestionIndex]?.source.replace('_', ' ')}
-                        {currentAttempt.questions[currentQuestionIndex]?.sourceReference ? ` (${currentAttempt.questions[currentQuestionIndex].sourceReference})` : ''}
+                        Resume Keyword: {currentAttempt.questions[currentQuestionIndex]?.sourceKeyword || currentAttempt.questions[currentQuestionIndex]?.targetSkill}
                       </span>
                     )}
                     <span className="badge-pill bg-indigo-950 text-indigo-300 border-indigo-800 text-[10px] font-bold">
@@ -1305,43 +1662,90 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
                 }`}>
                   <div className="space-y-4">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold font-outfit block">Spoken Voice Response:</span>
+                      <div className="space-y-0.5">
+                        <span className="text-xs font-bold font-outfit block">Spoken Voice Response</span>
+                        {isRecording && (
+                          <span className="text-[10px] font-mono text-rose-400 font-bold flex items-center gap-1">
+                            <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                            Recording... 00:{voiceDuration.toString().padStart(2, '0')}
+                          </span>
+                        )}
+                      </div>
+
                       <button
                         type="button"
-                        onClick={handleVoiceSim}
-                        className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition-all cursor-pointer ${
+                        onClick={handleToggleVoiceRecording}
+                        disabled={voiceStatus === 'permission' || voiceStatus === 'processing'}
+                        className={`text-xs font-bold px-4 py-2 rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm ${
                           isRecording
-                            ? 'bg-rose-500/20 text-rose-300 border border-rose-500/40 animate-pulse'
-                            : 'bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500 shadow-sm'
+                            ? 'bg-rose-600 hover:bg-rose-700 text-white border border-rose-500 animate-pulse'
+                            : voiceStatus === 'permission' || voiceStatus === 'processing'
+                            ? 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed'
+                            : 'bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-500'
                         }`}
                       >
-                        <Mic className="w-3.5 h-3.5" /> {isRecording ? 'Listening (Dictating...)' : '🎙 Start Recording'}
+                        <Mic className="w-3.5 h-3.5" />
+                        {voiceStatus === 'permission'
+                          ? 'Requesting Mic...'
+                          : voiceStatus === 'processing'
+                          ? 'Processing...'
+                          : isRecording
+                          ? `Stop Recording (00:${voiceDuration.toString().padStart(2, '0')})`
+                          : '🎙 Start Recording'}
                       </button>
                     </div>
 
-                    <div className={`p-4 rounded-xl border space-y-1 text-xs ${
+                    {voiceError && (
+                      <div className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-800 text-rose-200 text-xs flex justify-between items-center">
+                        <span className="font-medium">{voiceError}</span>
+                        <button
+                          type="button"
+                          onClick={handleStartVoiceRecording}
+                          className="px-3 py-1 rounded-lg bg-rose-800 hover:bg-rose-700 text-white font-bold text-[10px]"
+                        >
+                          Retry Microphone
+                        </button>
+                      </div>
+                    )}
+
+                    <div className={`p-4 rounded-xl border space-y-3 text-xs ${
                       testThemeMode === 'dark' ? 'bg-slate-950 border-slate-800' : 'bg-slate-50 border-slate-200'
                     }`}>
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                        Transcript generated from your response (Read-only)
-                      </span>
-                      <p className="font-mono leading-relaxed">
-                        {draftVoiceTranscript || 'Click "Start Recording" to dictate your spoken answer...'}
-                      </p>
+                      <div className="flex justify-between items-center border-b border-slate-800/40 pb-2">
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-1.5 font-outfit">
+                          <Mic className="w-3.5 h-3.5 text-indigo-400" /> Read-Only Voice Response
+                        </span>
+                        <div className="flex items-center gap-2 text-[10px] font-mono text-slate-400">
+                          {voiceDuration > 0 && <span>Duration: {voiceDuration}s</span>}
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${
+                            isRecording ? 'bg-rose-950 text-rose-300 border border-rose-800' : draftVoiceTranscript ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-slate-800 text-slate-400'
+                          }`}>
+                            {isRecording ? 'Recording Live' : draftVoiceTranscript ? 'Recorded Transcript' : 'Awaiting Dictation'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className={`p-3 rounded-lg leading-relaxed font-mono min-h-[70px] select-text ${
+                        draftVoiceTranscript
+                          ? testThemeMode === 'dark' ? 'bg-slate-900/80 text-slate-100 border border-slate-800' : 'bg-white text-slate-900 border border-slate-200'
+                          : testThemeMode === 'dark' ? 'bg-slate-900/40 text-slate-500 italic' : 'bg-slate-100/80 text-slate-400 italic'
+                      }`}>
+                        {draftVoiceTranscript ? `"${draftVoiceTranscript}"` : isRecording ? 'Listening live to microphone input...' : 'Click "Start Recording" above and speak your response clearly...'}
+                      </div>
                     </div>
                   </div>
 
                   <div className="pt-3 border-t border-slate-800 flex justify-between items-center">
                     <span className="text-[11px] text-slate-400 font-medium">
                       {submittedAnswers[currentAttempt.questions[currentQuestionIndex]?.id || currentAttempt.questions[currentQuestionIndex]?.questionId]
-                        ? '✓ Answer Submitted'
-                        : '● Click Submit Answer to save transcript'}
+                        ? '✓ Voice Answer Submitted & Saved to MongoDB'
+                        : '● Click Submit Answer to save transcript to MongoDB'}
                     </span>
 
                     <button
                       type="button"
                       onClick={handleSubmitAnswer}
-                      disabled={!draftVoiceTranscript || submitting}
+                      disabled={!draftVoiceTranscript || submitting || isRecording}
                       className="btn-primary px-6 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 shadow-md disabled:opacity-40 cursor-pointer"
                     >
                       {submitting ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> : <><Send className="w-3.5 h-3.5" /> Submit Answer</>}

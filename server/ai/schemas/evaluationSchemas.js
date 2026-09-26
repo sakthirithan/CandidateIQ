@@ -55,8 +55,27 @@ const UnifiedInterviewEvaluationSchema = z.object({
   detailedExplanation: z.string().default('Evaluation complete.')
 });
 
+const MockAnswerEvaluationSchema = z.object({
+  operation: z.string().default('mock_answer_evaluation'),
+  status: z.string().default('success'),
+  result: z.object({
+    questionId: z.union([z.string(), z.number()]).optional(),
+    sourceKeyword: z.string().optional(),
+    score: z.number().min(0).max(100).default(75),
+    technicalCorrectness: z.number().min(0).max(100).default(75),
+    relevance: z.number().min(0).max(100).default(75),
+    completeness: z.number().min(0).max(100).default(75),
+    reasoning: z.number().min(0).max(100).default(75),
+    clarity: z.number().min(0).max(100).default(75),
+    strengths: z.array(z.string()).default([]),
+    improvements: z.array(z.string()).default([]),
+    feedback: z.string().default('Answer evaluated based on question and source keyword context.')
+  })
+});
+
 module.exports = {
   TextAnswerEvaluationSchema,
   SpeechToTextSchema,
-  UnifiedInterviewEvaluationSchema
+  UnifiedInterviewEvaluationSchema,
+  MockAnswerEvaluationSchema
 };

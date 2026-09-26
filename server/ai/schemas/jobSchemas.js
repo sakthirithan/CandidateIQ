@@ -54,8 +54,14 @@ const ATSAnalysisSchema = z.object({
   explanation: z.string().default('ATS scan complete.')
 });
 
+const JobKeywordExtractionSchema = z.object({
+  jobId: z.string().optional(),
+  keywords: z.array(z.string()).default([])
+});
+
 module.exports = {
   JobDescriptionAnalysisSchema,
   JobMatchSchema,
-  ATSAnalysisSchema
+  ATSAnalysisSchema,
+  JobKeywordExtractionSchema
 };
