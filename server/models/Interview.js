@@ -8,6 +8,14 @@ const interviewSchema = new mongoose.Schema(
       required: true
     },
     candidateIdString: String,
+    workspaceId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'MockInterviewWorkspace'
+    },
+    configurationSnapshot: {
+      type: mongoose.Schema.Types.Mixed,
+      default: null
+    },
     job: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'Job'
@@ -96,6 +104,7 @@ const interviewSchema = new mongoose.Schema(
           answer: String,
           durationSeconds: Number,
           userAnswer: String,
+          voiceMetrics: mongoose.Schema.Types.Mixed,
           isAnswered: { type: Boolean, default: false },
           answeredAt: Date,
           topic: String,

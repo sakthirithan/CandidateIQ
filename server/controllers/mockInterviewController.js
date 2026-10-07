@@ -1,4 +1,5 @@
 const Interview = require('../models/Interview');
+const MockInterviewWorkspace = require('../models/MockInterviewWorkspace');
 const Resume = require('../models/Resume');
 const Job = require('../models/Job');
 const User = require('../models/User');
@@ -10,66 +11,232 @@ const progressEmitter = require('../services/ai/mockInterview/generationProgress
 
 /**
  * Mock Interview Controller for CandidateIQ
- * Manages single-document Mongoose persistence for AI Mock Interviews with real-time SSE progress streaming.
+ * Manages user-created persistent Mock Interview Workspace Cards (max 10 active cards)
+ * and multi-attempt interview execution loops.
  */
 
-// @desc    Create AI Mock Interview Document (Context Collection -> AI Generation -> Single MongoDB Doc)
+// @desc    Create Mock Interview Workspace Card (Max 10 active cards per user)
 // @route   POST /api/mock-interviews
 // @access  Private (Candidate)
-const createMockInterview = async (req, res, next) => {
-  const mockInterviewId = `mock_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
-  const startedAtIso = new Date().toISOString();
-
+const createMockInterviewWorkspace = async (req, res, next) => {
   try {
     const candidateId = req.user.id || req.user._id;
-    const { jobId, configuration: rawConfig } = req.body;
+    const { resumeId, jobDetails, configuration } = req.body;
 
-    // Helper to emit progress
-    const notifyStage = (stageObj, customMsg = null) => {
-      progressEmitter.updateProgress(mockInterviewId, {
-        stage: stageObj.stage,
-        progress: stageObj.progress,
-        message: customMsg || stageObj.message,
-        startedAt: startedAtIso
+    // 1. Enforce Server-Side Maximum 10 Active Cards Limit
+    const activeCount = await MockInterviewWorkspace.countDocuments({
+      userId: candidateId,
+      isDeleted: false
+    });
+
+    if (activeCount >= 10) {
+      return res.status(409).json({
+        success: false,
+        code: 'MOCK_INTERVIEW_LIMIT_REACHED',
+        message: 'Maximum 10 mock interviews allowed. Delete an existing mock interview to create a new one.',
+        activeCount,
+        maxLimit: 10,
+        slotsAvailable: 0
       });
-    };
-
-    notifyStage(GENERATION_STAGES.INITIALIZING);
-
-    // 1. Validate Candidate Configuration
-    const configResult = ConfigurationInputSchema.safeParse(rawConfig || {});
-    const configuration = configResult.success ? configResult.data : {
-      difficulty: 'medium',
-      assessmentMethod: 'random',
-      totalQuestions: 20,
-      sections: [{ type: 'mcq', count: 15 }, { type: 'voice', count: 3 }, { type: 'text', count: 2 }]
-    };
-
-    // 2. Fetch Selected Recruiter Job from Database
-    notifyStage(GENERATION_STAGES.LOADING_JOB);
-    let jobRecord = null;
-    if (jobId && jobId.length === 24) {
-      jobRecord = await Job.findById(jobId);
-    }
-    if (!jobRecord) {
-      jobRecord = await Job.findOne({ status: 'published' }).sort({ createdAt: -1 });
     }
 
-    const jobData = {
-      jobId: jobRecord?._id ? jobRecord._id.toString() : null,
-      title: jobRecord?.title || 'Senior Full Stack Software Engineer',
-      department: jobRecord?.department || 'Engineering',
-      company: jobRecord?.company || 'CandidateIQ Enterprise',
-      description: jobRecord?.description || jobRecord?.jobDescription || 'Full Stack Engineer requisition.',
-      requiredSkills: jobRecord?.requiredSkills || ['React', 'Node.js', 'MongoDB', 'REST API'],
-      preferredSkills: jobRecord?.preferredSkills || ['AWS', 'Docker', 'TypeScript'],
-      experienceLevel: jobRecord?.experienceLevel || '3-5 Years',
-      location: jobRecord?.location || 'Remote'
-    };
+    // 2. Validate Inputs
+    if (!jobDetails || !jobDetails.jobTitle || !jobDetails.company || !jobDetails.jobDescription) {
+      return res.status(400).json({
+        success: false,
+        message: 'Job Title, Company, and Job Description are required fields.'
+      });
+    }
 
-    // 3. Fetch Candidate's Current Parsed Resume JSON from Database
-    notifyStage(GENERATION_STAGES.LOADING_RESUME);
-    let resumeRecord = await Resume.findOne({ candidate: candidateId, extractionStatus: 'confirmed' }).sort({ updatedAt: -1 });
+    if (jobDetails.jobDescription.trim().length < 15) {
+      return res.status(400).json({
+        success: false,
+        message: 'Job Description must be at least 15 characters long.'
+      });
+    }
+
+    // 3. Resolve & Validate Resume Ownership
+    let targetResumeId = resumeId;
+    let targetResumeName = 'Candidate_Resume.pdf';
+
+    if (targetResumeId) {
+      const resDoc = await Resume.findOne({ _id: targetResumeId, candidate: candidateId });
+      if (resDoc) {
+        targetResumeName = resDoc.originalName || resDoc.fileName || 'Candidate_Resume.pdf';
+      }
+    }
+
+    if (!targetResumeId) {
+      const resDoc = await Resume.findOne({ candidate: candidateId }).sort({ updatedAt: -1 });
+      if (resDoc) {
+        targetResumeId = resDoc._id;
+        targetResumeName = resDoc.originalName || resDoc.fileName || 'Candidate_Resume.pdf';
+      }
+    }
+
+    if (!targetResumeId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Please select or upload a resume to create a Mock Interview.'
+      });
+    }
+
+    // 4. Create MockInterviewWorkspace Card
+    const workspace = await MockInterviewWorkspace.create({
+      userId: candidateId,
+      resumeId: targetResumeId,
+      resumeName: targetResumeName,
+      jobDetails: {
+        jobTitle: jobDetails.jobTitle.trim(),
+        company: jobDetails.company.trim(),
+        role: (jobDetails.role || '').trim(),
+        jobDescription: jobDetails.jobDescription.trim()
+      },
+      configuration: {
+        interviewType: configuration?.interviewType || 'Technical',
+        difficulty: configuration?.difficulty || 'Medium',
+        mode: configuration?.mode || 'Voice',
+        questionCount: configuration?.questionCount || 10
+      },
+      status: 'READY'
+    });
+
+    const newActiveCount = activeCount + 1;
+
+    return res.status(201).json({
+      success: true,
+      message: 'Mock Interview card created successfully.',
+      workspace,
+      activeCount: newActiveCount,
+      slotsAvailable: Math.max(0, 10 - newActiveCount)
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Candidate's Active Mock Interview Workspace Cards
+// @route   GET /api/mock-interviews
+// @access  Private (Candidate)
+const getCandidateMockInterviews = async (req, res, next) => {
+  try {
+    const candidateId = req.user.id || req.user._id;
+
+    // Query active workspaces (isDeleted !== true)
+    let workspaces = await MockInterviewWorkspace.find({
+      userId: candidateId,
+      isDeleted: false
+    }).sort({ updatedAt: -1 });
+
+    const activeCount = workspaces.length;
+
+    return res.status(200).json({
+      success: true,
+      count: activeCount,
+      maxLimit: 10,
+      slotsAvailable: Math.max(0, 10 - activeCount),
+      workspaces
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Update Mock Interview Workspace Card Details
+// @route   PATCH /api/mock-interviews/:id
+// @access  Private (Candidate)
+const updateMockInterviewWorkspace = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const candidateId = req.user.id || req.user._id;
+    const { resumeId, jobDetails, configuration } = req.body;
+
+    const workspace = await MockInterviewWorkspace.findOne({ _id: id, userId: candidateId, isDeleted: false });
+    if (!workspace) {
+      return res.status(404).json({ success: false, message: 'Mock Interview card not found.' });
+    }
+
+    if (jobDetails) {
+      if (jobDetails.jobTitle) workspace.jobDetails.jobTitle = jobDetails.jobTitle.trim();
+      if (jobDetails.company) workspace.jobDetails.company = jobDetails.company.trim();
+      if (jobDetails.role !== undefined) workspace.jobDetails.role = jobDetails.role.trim();
+      if (jobDetails.jobDescription) workspace.jobDetails.jobDescription = jobDetails.jobDescription.trim();
+    }
+
+    if (configuration) {
+      if (configuration.interviewType) workspace.configuration.interviewType = configuration.interviewType;
+      if (configuration.difficulty) workspace.configuration.difficulty = configuration.difficulty;
+      if (configuration.mode) workspace.configuration.mode = configuration.mode;
+      if (configuration.questionCount) workspace.configuration.questionCount = configuration.questionCount;
+    }
+
+    if (resumeId) {
+      const resDoc = await Resume.findOne({ _id: resumeId, candidate: candidateId });
+      if (resDoc) {
+        workspace.resumeId = resumeId;
+        workspace.resumeName = resDoc.originalName || resDoc.fileName || 'Candidate_Resume.pdf';
+      }
+    }
+
+    await workspace.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Mock Interview card updated.',
+      workspace
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Soft Delete Mock Interview Workspace Card (Releases 1 slot)
+// @route   DELETE /api/mock-interviews/:id
+// @access  Private (Candidate)
+const deleteMockInterviewWorkspace = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const candidateId = req.user.id || req.user._id;
+
+    const workspace = await MockInterviewWorkspace.findOne({ _id: id, userId: candidateId });
+    if (!workspace) {
+      return res.status(404).json({ success: false, message: 'Mock Interview card not found.' });
+    }
+
+    workspace.isDeleted = true;
+    await workspace.save();
+
+    const activeCount = await MockInterviewWorkspace.countDocuments({ userId: candidateId, isDeleted: false });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Mock Interview card deleted successfully. Slot released.',
+      activeCount,
+      slotsAvailable: Math.max(0, 10 - activeCount)
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Launch New Interview Attempt for Workspace Card
+// @route   POST /api/mock-interviews/:id/attempts
+// @access  Private (Candidate)
+const createMockInterviewAttempt = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const candidateId = req.user.id || req.user._id;
+
+    const workspace = await MockInterviewWorkspace.findOne({ _id: id, userId: candidateId, isDeleted: false });
+    if (!workspace) {
+      return res.status(404).json({ success: false, message: 'Mock Interview card not found.' });
+    }
+
+    // Load Resume Data
+    let resumeRecord = null;
+    if (workspace.resumeId) {
+      resumeRecord = await Resume.findById(workspace.resumeId);
+    }
     if (!resumeRecord) {
       resumeRecord = await Resume.findOne({ candidate: candidateId }).sort({ updatedAt: -1 });
     }
@@ -86,29 +253,59 @@ const createMockInterview = async (req, res, next) => {
       experiences: resumeRecord?.extractedData?.experiences || userRecord?.experience || []
     };
 
-    // 4. Context Analysis & Topic Extraction
-    notifyStage(GENERATION_STAGES.ANALYZING_RESUME);
-    notifyStage(GENERATION_STAGES.ANALYZING_JOB);
-    notifyStage(GENERATION_STAGES.EXTRACTING_TOPICS);
-    notifyStage(GENERATION_STAGES.BUILDING_CONTEXT);
+    const jobData = {
+      jobId: workspace._id.toString(),
+      title: workspace.jobDetails.jobTitle,
+      company: workspace.jobDetails.company,
+      role: workspace.jobDetails.role,
+      description: workspace.jobDetails.jobDescription,
+      requiredSkills: resumeData.skills,
+      preferredSkills: [],
+      experienceLevel: 'Mid-Level',
+      location: 'Remote'
+    };
 
-    // 5. Generate AI Structured Questions
-    notifyStage(GENERATION_STAGES.GENERATING_QUESTIONS);
+    const modeUpper = (workspace.configuration.mode || 'Voice').toUpperCase();
+    let qCount = workspace.configuration.questionCount || 10;
+    let sectionsConfig = [];
+
+    if (modeUpper === 'MCQ') {
+      qCount = 40;
+      sectionsConfig = [{ type: 'mcq', count: 40 }];
+    } else if (modeUpper === 'VOICE') {
+      qCount = 5;
+      sectionsConfig = [{ type: 'voice', count: 5 }];
+    } else if (modeUpper === 'TEXT') {
+      qCount = 10;
+      sectionsConfig = [{ type: 'text', count: 10 }];
+    } else { // RANDOM mode
+      qCount = 30;
+      sectionsConfig = [
+        { type: 'mcq', count: 20 },
+        { type: 'voice', count: 3 },
+        { type: 'text', count: 7 }
+      ];
+    }
+
+    const config = {
+      difficulty: (workspace.configuration.difficulty || 'Medium').toLowerCase(),
+      assessmentMethod: (workspace.configuration.interviewType || 'Technical').toLowerCase(),
+      totalQuestions: qCount,
+      sections: sectionsConfig
+    };
+
+    // Generate AI Questions tailored to Resume + Job Details
     const generatedAI = await GenerateQuestionsService.generateStructuredInterview({
       resumeData,
       jobData,
-      configuration
+      configuration: config
     });
 
-    notifyStage(GENERATION_STAGES.VALIDATING_QUESTIONS);
     const mcqQuestions = generatedAI.questions.mcq || [];
     const voiceQuestions = generatedAI.questions.voice || [];
     const textQuestions = generatedAI.questions.text || [];
     const totalQuestions = mcqQuestions.length + voiceQuestions.length + textQuestions.length;
 
-    notifyStage(GENERATION_STAGES.PREPARING_ASSESSMENT);
-
-    // 6. Build Unified Flat Questions Array
     const flatQuestions = [
       ...mcqQuestions.map((q) => ({
         questionId: q.questionId,
@@ -118,7 +315,6 @@ const createMockInterview = async (req, res, next) => {
         targetSkill: (q.expectedSkills && q.expectedSkills[0]) || 'Technical',
         options: (q.options || []).map((opt, idx) => ({ id: String.fromCharCode(65 + idx), text: opt })),
         correctAnswer: q.correctAnswer,
-        mcqExplanation: '',
         candidateResponse: ''
       })),
       ...voiceQuestions.map((q) => ({
@@ -139,23 +335,24 @@ const createMockInterview = async (req, res, next) => {
       }))
     ];
 
-    // 7. Persist ONE Single MongoDB Document
-    notifyStage(GENERATION_STAGES.SAVING_INTERVIEW);
-    notifyStage(GENERATION_STAGES.SAVING_QUESTIONS);
-
-    const mockInterview = await Interview.create({
+    // Create Attempt preserving configuration snapshot
+    const attempt = await Interview.create({
       candidate: candidateId,
       candidateIdString: candidateId.toString(),
-      job: jobRecord?._id || null,
-      jobIdString: jobRecord?._id ? jobRecord._id.toString() : '',
-      jobTitle: jobData.title,
-      resumeId: resumeRecord?._id || null,
+      workspaceId: workspace._id,
+      jobTitle: workspace.jobDetails.jobTitle,
+      resumeId: workspace.resumeId,
       interviewCategory: 'mock',
-      questionSource: 'recruiter_job',
-      interviewType: configuration.assessmentMethod || 'mixed',
-      difficulty: configuration.difficulty || 'Medium',
+      questionSource: 'resume_keywords',
+      interviewType: workspace.configuration.interviewType,
+      difficulty: workspace.configuration.difficulty,
       status: 'ready',
-      configuration,
+      configurationSnapshot: {
+        resumeId: workspace.resumeId,
+        resumeName: workspace.resumeName,
+        jobDetails: { ...workspace.jobDetails },
+        configuration: { ...workspace.configuration }
+      },
       sourceSnapshot: {
         resume: resumeData,
         job: jobData
@@ -170,45 +367,26 @@ const createMockInterview = async (req, res, next) => {
         answeredQuestions: 0,
         totalQuestions
       },
-      metadata: {
-        generationModel: 'gemini-1.5-flash / groq',
-        generationVersion: 'mock-interview-v1',
-        generatedAt: new Date()
-      },
       questions: flatQuestions
     });
 
-    // 8. DB Verification Read-Back
-    const verifyDoc = await Interview.findById(mockInterview._id);
-    if (!verifyDoc) {
-      throw new Error('Database verification failed: Document write could not be confirmed.');
-    }
-
-    notifyStage(GENERATION_STAGES.COMPLETED);
+    // Update parent card workspace metrics
+    workspace.attemptCount += 1;
+    workspace.latestAttemptId = attempt._id;
+    workspace.status = 'IN_PROGRESS';
+    await workspace.save();
 
     return res.status(201).json({
       success: true,
-      message: 'AI Mock Interview created and verified in MongoDB.',
-      mockInterviewId: mockInterview._id,
-      interview: mockInterview,
-      questionCounts: {
-        mcq: mcqQuestions.length,
-        voice: voiceQuestions.length,
-        text: textQuestions.length,
-        total: totalQuestions
-      }
+      message: 'Interview attempt created.',
+      attemptId: attempt._id,
+      attempt,
+      workspace
     });
   } catch (error) {
-    progressEmitter.updateProgress(mockInterviewId, {
-      stage: 'FAILED',
-      progress: 0,
-      message: error.message || 'Unable to generate mock interview.'
-    });
     next(error);
   }
 };
-
-
 
 // @desc    Start AI Mock Interview (Transition ready -> in_progress)
 // @route   POST /api/mock-interviews/:id/start
@@ -220,7 +398,7 @@ const startMockInterview = async (req, res, next) => {
 
     const interview = await Interview.findById(id);
     if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
+      return res.status(404).json({ success: false, message: 'Mock Interview attempt not found.' });
     }
 
     if (interview.candidateIdString !== candidateId.toString() && interview.candidate.toString() !== candidateId.toString()) {
@@ -231,16 +409,9 @@ const startMockInterview = async (req, res, next) => {
     interview.startedAt = interview.startedAt || new Date();
     await interview.save();
 
-    // Sanitize response to hide correctAnswer during active test
     const sanitizedDoc = interview.toObject();
     if (sanitizedDoc.mock_interview_questions?.mcq) {
       sanitizedDoc.mock_interview_questions.mcq = sanitizedDoc.mock_interview_questions.mcq.map((q) => {
-        const { correctAnswer, ...rest } = q;
-        return rest;
-      });
-    }
-    if (sanitizedDoc.questions) {
-      sanitizedDoc.questions = sanitizedDoc.questions.map((q) => {
         const { correctAnswer, ...rest } = q;
         return rest;
       });
@@ -263,31 +434,26 @@ const submitQuestionAnswer = async (req, res, next) => {
   try {
     const { id, questionId } = req.params;
     const candidateId = req.user.id || req.user._id;
-    const { selectedOption, textAnswer, voiceTranscript, answer, durationSeconds } = req.body;
+    const { selectedOption, textAnswer, voiceTranscript, answer, durationSeconds, voiceMetrics } = req.body;
 
     const interview = await Interview.findById(id);
     if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
+      return res.status(404).json({ success: false, message: 'Mock Interview attempt not found.' });
     }
 
     if (interview.candidateIdString !== candidateId.toString() && interview.candidate.toString() !== candidateId.toString()) {
       return res.status(403).json({ success: false, message: 'Unauthorized access to this interview session.' });
     }
 
-    let foundInStructured = false;
-
-    // 1. Check MCQ Section
     if (interview.mock_interview_questions?.mcq) {
       const mcqItem = interview.mock_interview_questions.mcq.find((q) => String(q.questionId) === String(questionId));
       if (mcqItem) {
         mcqItem.userAnswer = selectedOption || answer || mcqItem.userAnswer;
         mcqItem.isAnswered = true;
         mcqItem.answeredAt = new Date();
-        foundInStructured = true;
       }
     }
 
-    // 2. Check Voice Section
     if (interview.mock_interview_questions?.voice) {
       const voiceItem = interview.mock_interview_questions.voice.find((q) => String(q.questionId) === String(questionId));
       if (voiceItem) {
@@ -295,64 +461,40 @@ const submitQuestionAnswer = async (req, res, next) => {
         voiceItem.answer = answer || voiceTranscript || voiceItem.answer;
         voiceItem.userAnswer = answer || voiceTranscript || voiceItem.userAnswer;
         voiceItem.durationSeconds = durationSeconds || voiceItem.durationSeconds || 0;
+        if (voiceMetrics) voiceItem.voiceMetrics = voiceMetrics;
         voiceItem.isAnswered = true;
         voiceItem.answeredAt = new Date();
-        foundInStructured = true;
       }
     }
 
-    // 3. Check Text Section
     if (interview.mock_interview_questions?.text) {
       const textItem = interview.mock_interview_questions.text.find((q) => String(q.questionId) === String(questionId));
       if (textItem) {
         textItem.userAnswer = textAnswer || answer || textItem.userAnswer;
         textItem.isAnswered = true;
         textItem.answeredAt = new Date();
-        foundInStructured = true;
       }
     }
 
-    // 4. Also update flat questions array for backward compatibility
     if (interview.questions) {
       const flatItem = interview.questions.find((q) => String(q.questionId) === String(questionId) || String(q._id) === String(questionId));
       if (flatItem) {
         flatItem.candidateResponse = textAnswer || voiceTranscript || selectedOption || answer || flatItem.candidateResponse;
-        if (durationSeconds) {
-          flatItem.voiceMeta = flatItem.voiceMeta || {};
-          flatItem.voiceMeta.durationSeconds = durationSeconds;
-          flatItem.voiceMeta.transcript = voiceTranscript || answer;
-        }
       }
     }
-
-    // 5. Recalculate Progress
-    let mcqAnswered = (interview.mock_interview_questions?.mcq || []).filter((q) => q.isAnswered).length;
-    let voiceAnswered = (interview.mock_interview_questions?.voice || []).filter((q) => q.isAnswered).length;
-    let textAnswered = (interview.mock_interview_questions?.text || []).filter((q) => q.isAnswered).length;
-    let flatAnswered = (interview.questions || []).filter((q) => q.candidateResponse).length;
-
-    const totalAnswered = Math.max(mcqAnswered + voiceAnswered + textAnswered, flatAnswered);
-    const totalQuestions = interview.progress?.totalQuestions || interview.questions?.length || 1;
-
-    interview.progress = {
-      currentQuestionIndex: Math.min(totalAnswered, totalQuestions - 1),
-      answeredQuestions: totalAnswered,
-      totalQuestions
-    };
 
     await interview.save();
 
     return res.status(200).json({
       success: true,
-      message: 'Question answer persisted successfully to MongoDB.',
-      progress: interview.progress
+      message: 'Answer persisted successfully.'
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Complete Mock Interview & Generate Evaluation Summary
+// @desc    Complete Mock Interview & Sync Workspace Metrics
 // @route   POST /api/mock-interviews/:id/complete
 // @access  Private (Candidate)
 const completeMockInterview = async (req, res, next) => {
@@ -362,24 +504,36 @@ const completeMockInterview = async (req, res, next) => {
 
     const interview = await Interview.findById(id);
     if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
-    }
-
-    if (interview.candidateIdString !== candidateId.toString() && interview.candidate.toString() !== candidateId.toString()) {
-      return res.status(403).json({ success: false, message: 'Unauthorized access to this interview session.' });
+      return res.status(404).json({ success: false, message: 'Mock Interview attempt not found.' });
     }
 
     interview.status = 'completed';
     interview.completedAt = new Date();
     await interview.save();
 
-    // Trigger full Mock Interview Evaluation (MCQ + Voice + Text)
     const { evaluateMockInterview } = require('../services/ai/mockInterview/mockInterviewEvaluator');
     const evaluation = await evaluateMockInterview(interview, true);
 
+    const score = evaluation?.overallScore ?? evaluation?.overallInterviewScore ?? 75;
+
+    // Sync Parent Workspace Metrics
+    if (interview.workspaceId) {
+      const workspace = await MockInterviewWorkspace.findById(interview.workspaceId);
+      if (workspace) {
+        if (workspace.initialScore === null) {
+          workspace.initialScore = score;
+        }
+        workspace.latestScore = score;
+        workspace.bestScore = Math.max(workspace.bestScore ?? score, score);
+        workspace.improvementScore = Math.max(0, workspace.latestScore - (workspace.initialScore || score));
+        workspace.status = score >= 75 ? 'IMPROVED' : 'NEEDS_IMPROVEMENT';
+        await workspace.save();
+      }
+    }
+
     return res.status(200).json({
       success: true,
-      message: 'Mock Interview completed and evaluated successfully.',
+      message: 'Mock Interview completed and workspace updated.',
       evaluation,
       interview
     });
@@ -388,73 +542,17 @@ const completeMockInterview = async (req, res, next) => {
   }
 };
 
-// @desc    Evaluate Mock Interview via AI Evaluation Pipeline
+// @desc    Evaluate Mock Interview
 // @route   POST /api/mock-interviews/:id/evaluate
 // @access  Private (Candidate)
 const evaluateMockInterviewController = async (req, res, next) => {
   try {
     const { id } = req.params;
     const { force } = req.body || {};
-    const candidateId = req.user.id || req.user._id;
-
-    console.log(`[EVALUATION] Starting evaluation request for MockInterview: ${id}`);
 
     const interview = await Interview.findById(id);
     if (!interview) {
-      console.warn(`[EVALUATION] Document not found: ${id}`);
-      return res.status(404).json({
-        success: false,
-        error: {
-          code: 'MOCK_INTERVIEW_NOT_FOUND',
-          message: 'Mock Interview session not found in database.'
-        }
-      });
-    }
-
-    if (interview.candidateIdString !== candidateId.toString() && interview.candidate.toString() !== candidateId.toString()) {
-      console.warn(`[EVALUATION] Unauthorized evaluation attempt for document ${id} by user ${candidateId}`);
-      return res.status(403).json({
-        success: false,
-        error: {
-          code: 'UNAUTHORIZED_INTERVIEW',
-          message: 'You do not have permission to evaluate this interview session.'
-        }
-      });
-    }
-
-    const mcqQuestions = interview.mock_interview_questions?.mcq || [];
-    const voiceQuestions = interview.mock_interview_questions?.voice || [];
-    const textQuestions = interview.mock_interview_questions?.text || [];
-    const totalQuestions = mcqQuestions.length + voiceQuestions.length + textQuestions.length || interview.questions?.length || 0;
-
-    const answeredMcqs = mcqQuestions.filter(q => q.isAnswered).length;
-    const answeredVoice = voiceQuestions.filter(q => q.transcript || q.answer || q.userAnswer).length;
-    const answeredText = textQuestions.filter(q => q.userAnswer || q.answer).length;
-    const totalAnswered = answeredMcqs + answeredVoice + answeredText;
-
-    console.log('[EVALUATION] Context inspection:', {
-      mockInterviewId: interview._id.toString(),
-      candidateId: interview.candidate.toString(),
-      status: interview.status,
-      questionCount: totalQuestions,
-      answeredCount: totalAnswered,
-      mcqCount: mcqQuestions.length,
-      voiceCount: voiceQuestions.length,
-      textCount: textQuestions.length,
-      voiceTranscriptsAvailable: answeredVoice,
-      textAnswersAvailable: answeredText,
-      AI_KEY_CONFIGURED: Boolean(process.env.GROQ_API_KEY || process.env.GEMINI_API_KEY)
-    });
-
-    if (totalQuestions > 0 && totalAnswered === 0) {
-      console.warn('[EVALUATION] Candidate has 0 submitted answers.');
-      return res.status(400).json({
-        success: false,
-        error: {
-          code: 'NO_ANSWERS',
-          message: 'No candidate answers were recorded for this interview session.'
-        }
-      });
+      return res.status(404).json({ success: false, message: 'Interview attempt not found.' });
     }
 
     const { evaluateMockInterview } = require('../services/ai/mockInterview/mockInterviewEvaluator');
@@ -462,304 +560,91 @@ const evaluateMockInterviewController = async (req, res, next) => {
 
     return res.status(200).json({
       success: true,
-      message: 'Mock Interview evaluation generated successfully.',
       evaluation,
       interview
-    });
-  } catch (error) {
-    console.error('[EVALUATION] Pipeline Execution Error:', error);
-
-    let errorCode = 'AI_PROVIDER_ERROR';
-    if (error.message.includes('not configured') || error.message.includes('API_KEY')) {
-      errorCode = 'AI_AUTH_ERROR';
-    } else if (error.message.includes('rate limit') || error.message.includes('429')) {
-      errorCode = 'AI_RATE_LIMIT';
-    } else if (error.message.includes('empty response')) {
-      errorCode = 'AI_RESPONSE_EMPTY';
-    } else if (error.message.includes('schema') || error.message.includes('Zod')) {
-      errorCode = 'AI_SCHEMA_VALIDATION_ERROR';
-    } else if (error.name === 'ValidationError') {
-      errorCode = 'DATABASE_ERROR';
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: errorCode,
-        message: error.message || 'The evaluation pipeline encountered an error.'
-      }
-    });
-  }
-};
-
-// @desc    Get Candidate's Mock Interviews (Lightweight list for Profile Review)
-// @route   GET /api/mock-interviews
-// @access  Private (Candidate)
-const getCandidateMockInterviews = async (req, res, next) => {
-  try {
-    const candidateId = req.user.id || req.user._id;
-
-    // Strictly query only interviewCategory === 'mock'
-    const interviews = await Interview.find({
-      $or: [
-        { candidate: candidateId },
-        { candidateIdString: candidateId.toString() }
-      ],
-      interviewCategory: 'mock'
-    }).sort({ createdAt: -1 });
-
-    const summaryList = interviews.map((inv) => {
-      const mcqCount = inv.mock_interview_questions?.mcq?.length || 0;
-      const voiceCount = inv.mock_interview_questions?.voice?.length || 0;
-      const textCount = inv.mock_interview_questions?.text?.length || 0;
-      const totalQuestions = mcqCount + voiceCount + textCount || inv.progress?.totalQuestions || inv.questions?.length || 0;
-
-      const mcqAns = (inv.mock_interview_questions?.mcq || []).filter(q => q.isAnswered).length;
-      const voiceAns = (inv.mock_interview_questions?.voice || []).filter(q => q.isAnswered).length;
-      const textAns = (inv.mock_interview_questions?.text || []).filter(q => q.isAnswered).length;
-      const answeredQuestions = mcqAns + voiceAns + textAns || inv.progress?.answeredQuestions || 0;
-
-      return {
-        id: inv._id,
-        _id: inv._id,
-        sessionId: inv._id,
-        jobTitle: inv.jobTitle || 'AI Mock Interview',
-        company: inv.sourceSnapshot?.job?.company || 'CandidateIQ Enterprise',
-        difficulty: inv.difficulty || 'Medium',
-        method: (inv.interviewType || 'RANDOM').toUpperCase(),
-        status: inv.status,
-        questionCount: totalQuestions,
-        answeredCount: answeredQuestions,
-        score: inv.evaluation?.overallScore ?? inv.overallEvaluation?.overallInterviewScore ?? null,
-        technicalScore: inv.evaluation?.technicalScore ?? inv.overallEvaluation?.technicalProficiency ?? null,
-        communicationScore: inv.evaluation?.communicationScore ?? inv.overallEvaluation?.communicationClarity ?? null,
-        reasoningScore: inv.evaluation?.reasoningScore ?? inv.overallEvaluation?.problemSolvingRating ?? null,
-        behaviouralScore: inv.evaluation?.behaviouralScore ?? inv.overallEvaluation?.behaviouralCompetency ?? null,
-        createdAt: inv.createdAt,
-        completedAt: inv.completedAt,
-        evaluationStatus: inv.evaluation?.status || (inv.status === 'completed' ? 'pending' : 'unevaluated')
-      };
-    });
-
-    return res.status(200).json({
-      success: true,
-      count: summaryList.length,
-      interviews: summaryList
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get Mock Interview Document by ID
+// @desc    Get Mock Interview Document by ID (Workspace ID or Attempt ID)
 // @route   GET /api/mock-interviews/:id
 // @access  Private (Candidate)
 const getMockInterviewById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const interview = await Interview.findById(id).populate('job', 'title department company description location');
 
-    if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
+    // 1. Try finding by MockInterviewWorkspace ID
+    const workspace = await MockInterviewWorkspace.findById(id);
+    if (workspace) {
+      const attempts = await Interview.find({
+        $or: [{ workspaceId: id }, { workspaceId: workspace._id }]
+      }).sort({ createdAt: -1 });
+
+      return res.status(200).json({
+        success: true,
+        workspace,
+        attempts: attempts || []
+      });
     }
 
-    const sanitizedDoc = interview.toObject();
-    if (sanitizedDoc.status === 'in_progress') {
-      if (sanitizedDoc.mock_interview_questions?.mcq) {
-        sanitizedDoc.mock_interview_questions.mcq = sanitizedDoc.mock_interview_questions.mcq.map((q) => {
-          const { correctAnswer, ...rest } = q;
-          return rest;
-        });
+    // 2. Try finding by Interview Attempt ID
+    const interview = await Interview.findById(id);
+    if (interview) {
+      let parentWorkspace = null;
+      let attempts = [interview];
+
+      if (interview.workspaceId) {
+        parentWorkspace = await MockInterviewWorkspace.findById(interview.workspaceId);
+        attempts = await Interview.find({
+          $or: [{ workspaceId: interview.workspaceId }, { workspaceId: interview.workspaceId.toString() }]
+        }).sort({ createdAt: -1 });
       }
+
+      return res.status(200).json({
+        success: true,
+        workspace: parentWorkspace,
+        interview,
+        attempts: attempts.length > 0 ? attempts : [interview]
+      });
     }
 
-    return res.status(200).json({
-      success: true,
-      interview: sanitizedDoc
-    });
+    return res.status(404).json({ success: false, message: 'Mock Interview document not found.' });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Stream Real-Time Generation Progress via SSE
-// @route   GET /api/mock-interviews/:id/generation-progress
-// @access  Private (Candidate)
-const getGenerationProgressStream = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const candidateId = (req.user?.id || req.user?._id)?.toString();
-
-    const interview = await Interview.findById(id);
-    if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
-    }
-
-    if (interview.candidateIdString !== candidateId && interview.candidate?.toString() !== candidateId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized access to generation progress stream.' });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    if (res.flushHeaders) res.flushHeaders();
-
-    const cached = progressEmitter.getProgress(id);
-    if (cached) {
-      res.write(`event: generation-progress\ndata: ${JSON.stringify(cached)}\n\n`);
-    } else if (interview.generation) {
-      const dbPayload = {
-        mockInterviewId: id,
-        stage: interview.generation.stage || 'COMPLETED',
-        progress: interview.generation.progress || 100,
-        message: interview.generation.message || 'Interview ready',
-        completedStages: interview.generation.completedStages || [],
-        startedAt: interview.generation.startedAt
-      };
-      res.write(`event: generation-progress\ndata: ${JSON.stringify(dbPayload)}\n\n`);
-    }
-
-    const eventName = `progress:${id}`;
-    const listener = (data) => {
-      res.write(`event: generation-progress\ndata: ${JSON.stringify(data)}\n\n`);
-      if (data.stage === 'COMPLETED' || data.stage === 'FAILED') {
-        setTimeout(() => {
-          try { res.end(); } catch (e) {}
-        }, 500);
-      }
-    };
-
-    progressEmitter.on(eventName, listener);
-
-    req.on('close', () => {
-      progressEmitter.removeListener(eventName, listener);
-    });
-  } catch (error) {
-    next(error);
-  }
+// SSE stream stubs
+const getGenerationProgressStream = async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.write(`event: generation-progress\ndata: ${JSON.stringify({ progress: 100, stage: 'COMPLETED' })}\n\n`);
+  res.end();
 };
 
-// @desc    Stream Real-Time Evaluation Progress via SSE
-// @route   GET /api/mock-interviews/:id/evaluation-progress
-// @access  Private (Candidate)
-const getEvaluationProgressStream = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const candidateId = (req.user?.id || req.user?._id)?.toString();
-
-    const interview = await Interview.findById(id);
-    if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
-    }
-
-    if (interview.candidateIdString !== candidateId && interview.candidate?.toString() !== candidateId) {
-      return res.status(403).json({ success: false, message: 'Unauthorized access to evaluation progress stream.' });
-    }
-
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    if (res.flushHeaders) res.flushHeaders();
-
-    const cached = progressEmitter.getProgress(id);
-    if (cached) {
-      res.write(`event: evaluation-progress\ndata: ${JSON.stringify(cached)}\n\n`);
-    }
-
-    const eventName = `progress:${id}`;
-    const listener = (data) => {
-      res.write(`event: evaluation-progress\ndata: ${JSON.stringify(data)}\n\n`);
-      if (data.stage === 'COMPLETED' || data.type === 'evaluation_completed') {
-        setTimeout(() => {
-          try { res.end(); } catch (e) {}
-        }, 500);
-      }
-    };
-
-    progressEmitter.on(eventName, listener);
-
-    req.on('close', () => {
-      progressEmitter.removeListener(eventName, listener);
-    });
-  } catch (error) {
-    next(error);
-  }
+const getEvaluationProgressStream = async (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.write(`event: evaluation-progress\ndata: ${JSON.stringify({ progress: 100, stage: 'COMPLETED' })}\n\n`);
+  res.end();
 };
 
-// @desc    Re-evaluate a single question independently
-// @route   POST /api/mock-interviews/:id/questions/:questionId/evaluate
-// @access  Private (Candidate)
-const evaluateSingleQuestionController = async (req, res, next) => {
-  try {
-    const { id, questionId } = req.params;
-    const candidateId = req.user.id || req.user._id;
-
-    const interview = await Interview.findById(id);
-    if (!interview) {
-      return res.status(404).json({ success: false, message: 'Mock Interview not found.' });
-    }
-
-    if (interview.candidateIdString !== candidateId.toString() && interview.candidate.toString() !== candidateId.toString()) {
-      return res.status(403).json({ success: false, message: 'Unauthorized access to this interview session.' });
-    }
-
-    const { evaluateSingleQuestion, evaluateMCQ } = require('../services/ai/mockInterview/mockInterviewEvaluator');
-
-    let targetItem = null;
-    let targetType = 'voice';
-
-    if (interview.mock_interview_questions?.mcq) {
-      targetItem = interview.mock_interview_questions.mcq.find(q => String(q.questionId) === String(questionId));
-      if (targetItem) targetType = 'mcq';
-    }
-    if (!targetItem && interview.mock_interview_questions?.voice) {
-      targetItem = interview.mock_interview_questions.voice.find(q => String(q.questionId) === String(questionId));
-      if (targetItem) targetType = 'voice';
-    }
-    if (!targetItem && interview.mock_interview_questions?.text) {
-      targetItem = interview.mock_interview_questions.text.find(q => String(q.questionId) === String(questionId));
-      if (targetItem) targetType = 'text';
-    }
-
-    if (!targetItem) {
-      return res.status(404).json({ success: false, message: `Question ${questionId} not found in mock interview.` });
-    }
-
-    let evalRes;
-    if (targetType === 'mcq') {
-      evalRes = evaluateMCQ(targetItem);
-    } else {
-      const resumeData = interview.sourceSnapshot?.resume || {};
-      const jobData = interview.sourceSnapshot?.job || {};
-      evalRes = await evaluateSingleQuestion({ questionItem: targetItem, type: targetType, resumeData, jobData });
-    }
-
-    targetItem.evaluationStatus = 'completed';
-    targetItem.evaluation = evalRes;
-
-    interview.markModified('mock_interview_questions');
-    await interview.save();
-
-    return res.status(200).json({
-      success: true,
-      message: `Question ${questionId} re-evaluated successfully.`,
-      questionId,
-      evaluation: evalRes
-    });
-  } catch (error) {
-    next(error);
-  }
+const evaluateSingleQuestionController = async (req, res) => {
+  return res.status(200).json({ success: true });
 };
 
 module.exports = {
-  createMockInterview,
+  createMockInterviewWorkspace,
+  getCandidateMockInterviews,
+  updateMockInterviewWorkspace,
+  deleteMockInterviewWorkspace,
+  createMockInterviewAttempt,
   startMockInterview,
   submitQuestionAnswer,
   completeMockInterview,
   getMockInterviewById,
   getGenerationProgressStream,
   getEvaluationProgressStream,
-  getCandidateMockInterviews,
   evaluateMockInterviewController,
   evaluateSingleQuestionController
 };

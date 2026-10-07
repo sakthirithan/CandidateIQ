@@ -1,14 +1,21 @@
-export { default as AssessmentHeader } from './AssessmentHeader';
-export { default as AssessmentTimer } from './AssessmentTimer';
-export { default as AssessmentProgress } from './AssessmentProgress';
-export { default as QuestionNavigator } from './QuestionNavigator';
-export { default as QuestionNavigatorMobile } from './QuestionNavigatorMobile';
-export { default as QuestionCard } from './QuestionCard';
-export { default as AnswerOption } from './AnswerOption';
-export { default as AnswerOptions } from './AnswerOptions';
-export { default as AssessmentFooter } from './AssessmentFooter';
-export { default as AssessmentCompletionDialog } from './AssessmentCompletionDialog';
-export { default as AssessmentSkeleton } from './AssessmentSkeleton';
-export { default as AssessmentErrorState } from './AssessmentErrorState';
-export { default as MCQAssessmentStart } from './MCQAssessmentStart';
-export { default as MCQAssessmentRoom } from './MCQAssessmentRoom';
+// Compatibility Re-exports pointing to new Physical Module paths
+export {
+  AIMockInterviewRoom,
+  MockInterviewRoom,
+  MCQAssessmentRoom,
+  MCQAssessmentStart,
+  ScheduleMockInterviewModal,
+  InterviewEvaluationAnalytics,
+  InterviewImprovementPage,
+  InterviewReviewDetail,
+  Frame8AssessmentContainer,
+  Frame8AssessmentMCQ,
+  CandidateHRInterviews,
+  JobInterviewRoom,
+  Frame8LiveHR,
+  InterviewJourney,
+  InterviewComparisonModal,
+  InterviewComparisonPage,
+  ExternalFeedbackModal,
+  InterviewResults
+} from '../../modules/candidate';

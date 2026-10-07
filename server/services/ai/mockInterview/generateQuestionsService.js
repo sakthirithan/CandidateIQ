@@ -30,9 +30,9 @@ class GenerateQuestionsService {
       else if (assessmentMethod === 'voice') voiceCount = 5;
       else if (assessmentMethod === 'text') textCount = 10;
       else {
-        mcqCount = 15;
+        mcqCount = 20;
         voiceCount = 3;
-        textCount = 2;
+        textCount = 7;
       }
     }
 

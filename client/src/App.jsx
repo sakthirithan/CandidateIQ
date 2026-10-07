@@ -1,25 +1,40 @@
 import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
-import LandingPage from './components/LandingPage';
+import { useLocation, useNavigate, Routes, Route, Navigate, useParams } from 'react-router-dom';
+import LandingPage from './modules/shared/landing/components/LandingPage';
 import {
   Sidebar, Topbar, NotificationCenter, SettingsPage, SettingsModal, ErrorBoundary, GlobalSearchPalette
-} from './components/common';
+} from './modules/shared';
 import {
   CandidateIQDashboard, CandidateIQProfile, ResumeIntelligence, ResumeHistory, SkillIntelligence,
-  JobDiscovery, JobDetailsView, JobTrackerView, AIMockInterviewRoom, InterviewResults, InterviewEvaluationAnalytics, SkillGapIntelligence, ApplicationTracker, ProfileEvidenceIntelligence, InterviewJourney, ProfileReviewHub, InterviewComparisonPage, CandidateHRInterviews, JobInterviewRoom
-} from './components/candidate';
+  JobDiscovery, JobDetailsView, JobTrackerView, SkillGapIntelligence, ApplicationTracker, ProfileEvidenceIntelligence, ProfileReviewHub, CandidateActivityHub
+} from './modules/candidate';
+
+import {
+  AIMockInterviewRoom, InterviewResults, InterviewEvaluationAnalytics, InterviewJourney, InterviewComparisonPage, CandidateHRInterviews, JobInterviewRoom, InterviewImprovementPage
+} from './modules/candidate';
 
 import {
   RecruiterIQDashboard, RecruiterJobManagement, CandidateIntelligenceProfile,
   RecruiterCandidateManagement, CandidateIQComparison, AIRecruitmentAssistantIQ
-} from './components/recruiter';
+} from './modules/hr';
 
-import { LoginModal, RegisterModal, PaymentDemoModal, ForgotPasswordModal } from './components/auth';
-import { AdminManagement } from './components/admin';
-import DemoModal from './components/demo/DemoModal';
+import { LoginModal, RegisterModal, PaymentDemoModal, ForgotPasswordModal, DemoModal } from './modules/shared';
+import { AdminManagement } from './modules/admin';
 
 import { getCurrentUser, logoutUser, initAuthStorage, updateUser } from './utils/auth';
 import { mockNotificationService } from './services/mockApi/notificationService';
+
+function InterviewImprovementRouteWrapper() {
+  const { interviewId } = useParams();
+  const navigate = useNavigate();
+  return (
+    <InterviewImprovementPage
+      interviewId={interviewId}
+      onBack={() => navigate('/activities')}
+      onNavigateToMockInterview={() => navigate('/interview')}
+    />
+  );
+}
 
 function App() {
   const location = useLocation();
@@ -162,16 +177,31 @@ function App() {
     navigateTab('recruiter-dashboard');
   };
 
+  const [isAssessmentActive, setIsAssessmentActive] = useState(false);
+
+  useEffect(() => {
+    const checkAssessmentClass = () => {
+      setIsAssessmentActive(document.body.classList.contains('hide-nav-sidebar'));
+    };
+    checkAssessmentClass();
+    const observer = new MutationObserver(checkAssessmentClass);
+    observer.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
   const handleLogout = () => {
     logoutUser();
     setCurrentUser(null);
     navigateTab('landing');
   };
 
-  const isStandalonePage = activeTab === 'landing' || location.pathname.startsWith('/job-interview');
+  const isStandalonePage =
+    activeTab === 'landing' ||
+    location.pathname.startsWith('/job-interview') ||
+    isAssessmentActive;
 
   return (
-    <div className="min-h-screen bg-slate-50 flex text-slate-900 font-sans antialiased">
+    <div className="h-screen w-screen overflow-hidden bg-slate-50 flex text-slate-900 font-sans antialiased">
       {/* Global Sidebar Shell (Hidden on Landing page and Standalone Test Rooms) */}
       {!isStandalonePage && (
         <Sidebar
@@ -184,7 +214,7 @@ function App() {
       )}
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 flex flex-col min-w-0 min-h-screen">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         {/* Global Topbar Header (Hidden on Landing page and Standalone Test Rooms) */}
         {!isStandalonePage && (
           <Topbar
@@ -201,7 +231,7 @@ function App() {
         )}
 
         {/* Dynamic Route View Content */}
-        <main className="flex-1">
+        <main className="flex-1 min-h-0 overflow-y-auto">
           <Routes>
             <Route
               path="/"
@@ -307,23 +337,23 @@ function App() {
             />
             <Route
               path="/profile-review"
-              element={<ProfileReviewHub onNavigateToMockInterview={() => navigateTab('interview')} />}
+              element={<Navigate to="/mock-interview" replace />}
             />
             <Route
               path="/profile-review/compare"
-              element={<ProfileReviewHub initialView="compare" onNavigateToMockInterview={() => navigateTab('interview')} />}
+              element={<Navigate to="/mock-interview" replace />}
             />
             <Route
               path="/profile-review/:interviewId"
-              element={<ProfileReviewHub onNavigateToMockInterview={() => navigateTab('interview')} />}
+              element={<Navigate to="/mock-interview" replace />}
             />
             <Route
               path="/ai-mock-interview/profile-review/:interviewId"
-              element={<ProfileReviewHub onNavigateToMockInterview={() => navigateTab('interview')} />}
+              element={<Navigate to="/mock-interview" replace />}
             />
             <Route
               path="/evidence-intelligence"
-              element={<ProfileReviewHub onNavigateToMockInterview={() => navigateTab('interview')} />}
+              element={<Navigate to="/mock-interview" replace />}
             />
             <Route
               path="/hr-interviews"
@@ -365,14 +395,33 @@ function App() {
                       setInterviewReport(report);
                       setTargetedSkill(null);
                       setInitialJobForMock(null);
-                      navigateTab('profile-review');
+                    }}
+                  />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/mock-interview"
+              element={
+                <ErrorBoundary title="AI Mock Interview Room Error">
+                  <AIMockInterviewRoom
+                    targetSkill={targetedSkill}
+                    initialJobData={initialJobForMock}
+                    onComplete={(report) => {
+                      setInterviewReport(report);
+                      setTargetedSkill(null);
+                      setInitialJobForMock(null);
                     }}
                   />
                 </ErrorBoundary>
               }
             />
             <Route path="/interview-results" element={<InterviewResults report={interviewReport} />} />
-            <Route path="/interview-evaluation" element={<ProfileReviewHub onNavigateToMockInterview={() => navigateTab('interview')} />} />
+            <Route path="/interview-evaluation" element={<Navigate to="/mock-interview" replace />} />
+            <Route path="/interview/:interviewId/improvement" element={<InterviewImprovementRouteWrapper />} />
+            <Route path="/interviews/:interviewId/improvement" element={<InterviewImprovementRouteWrapper />} />
+            <Route path="/activities" element={<CandidateActivityHub onNavigateToInterview={() => navigateTab('interview')} />} />
+            <Route path="/activities/:activityId" element={<CandidateActivityHub onNavigateToInterview={() => navigateTab('interview')} />} />
             <Route path="/skill-gaps" element={<SkillGapIntelligence />} />
 
             {/* Recruiter Routes */}

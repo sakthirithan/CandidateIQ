@@ -704,6 +704,56 @@ export const mockInterviewService = {
     }
   },
 
+  getWorkspaces: async () => {
+    try {
+      const response = await api.get('/mock-interviews');
+      return response.data;
+    } catch (err) {
+      console.warn('[mockInterviewService] API fetch workspaces warning:', err);
+      return { count: 0, maxLimit: 10, slotsAvailable: 10, workspaces: [] };
+    }
+  },
+
+  createWorkspace: async (data) => {
+    try {
+      const response = await api.post('/mock-interviews', data);
+      return response.data;
+    } catch (err) {
+      console.error('[mockInterviewService] Create workspace error:', err);
+      throw err;
+    }
+  },
+
+  updateWorkspace: async (id, data) => {
+    try {
+      const response = await api.patch(`/mock-interviews/${id}`, data);
+      return response.data;
+    } catch (err) {
+      console.error(`[mockInterviewService] Update workspace ${id} error:`, err);
+      throw err;
+    }
+  },
+
+  deleteWorkspace: async (id) => {
+    try {
+      const response = await api.delete(`/mock-interviews/${id}`);
+      return response.data;
+    } catch (err) {
+      console.error(`[mockInterviewService] Delete workspace ${id} error:`, err);
+      throw err;
+    }
+  },
+
+  createAttemptForWorkspace: async (workspaceId) => {
+    try {
+      const response = await api.post(`/mock-interviews/${workspaceId}/attempts`);
+      return response.data;
+    } catch (err) {
+      console.error(`[mockInterviewService] Create attempt for workspace ${workspaceId} error:`, err);
+      throw err;
+    }
+  },
+
   recordTabSwitch: async (sessionId) => {
     let session = activeSessions[sessionId] || storageMockInterviews.getById(sessionId);
     if (session) {

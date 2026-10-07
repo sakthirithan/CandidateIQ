@@ -29,6 +29,7 @@ const analyticsRoutes = require('./routes/analyticsRoutes');
 const adminRoutes = require('./routes/adminRoutes');
 const aiTestRoutes = require('./routes/aiTestRoutes');
 const mockInterviewRoutes = require('./routes/mockInterviewRoutes');
+const improvementActivityRoutes = require('./routes/improvementActivityRoutes');
 
 // Mount Routes
 app.use('/api/auth', authRoutes);
@@ -37,6 +38,7 @@ app.use('/api/resumes', resumeRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/interviews', interviewRoutes);
 app.use('/api/mock-interviews', mockInterviewRoutes);
+app.use('/api', improvementActivityRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiTestRoutes);

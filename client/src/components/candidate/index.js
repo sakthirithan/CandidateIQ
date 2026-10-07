@@ -1,34 +1,32 @@
-export { default as AIMockInterviewRoom } from './AIMockInterviewRoom';
-export { default as ApplicationTracker } from './ApplicationTracker';
-export { default as CandidateDashboard } from './CandidateDashboard';
-export { default as CandidateIQDashboard } from './CandidateIQDashboard';
-export { default as CandidateIQProfile } from './CandidateIQProfile';
-export { default as DynamicProfileRenderer } from './DynamicProfileRenderer';
-export { default as ProfileDraftEditor } from './ProfileDraftEditor';
-export { default as ManualProfileBuilder } from './ManualProfileBuilder';
-export { default as ProfileReplacementModal } from './ProfileReplacementModal';
-export { default as ResumeHistory } from './ResumeHistory';
-export { default as ResumeDetailWorkspace } from './ResumeDetailWorkspace';
-export { default as ATSScoreGauge } from './ATSScoreGauge';
-export { default as InterviewEvaluationAnalytics } from './InterviewEvaluationAnalytics';
-export { default as InterviewResults } from './InterviewResults';
-
-export { default as JobDiscovery } from './JobDiscovery';
-export { default as JobDetailsView } from './JobDetailsView';
-export { default as JobTrackerView } from './JobTrackerView';
-export { default as JobMatchingView } from './JobMatchingView';
-export { default as MockInterviewRoom } from './MockInterviewRoom';
-export { default as ResumeIntelligence } from './ResumeIntelligence';
-export { default as ResumeUploader } from './ResumeUploader';
-export { default as SkillGapIntelligence } from './SkillGapIntelligence';
-export { default as SkillIntelligence } from './SkillIntelligence';
-export { default as ProfileEvidenceIntelligence } from './ProfileEvidenceIntelligence';
-export { default as InterviewJourney } from './InterviewJourney';
-export { default as ProfileReviewHub } from './ProfileReviewHub';
-export { default as InterviewReviewDetail } from './InterviewReviewDetail';
-export { default as DynamicInterviewReport } from './DynamicInterviewReport';
-export { default as InterviewComparisonModal } from './InterviewComparisonModal';
-export { default as ExternalFeedbackModal } from './ExternalFeedbackModal';
-export { default as InterviewComparisonPage } from './InterviewComparisonPage';
-export { default as CandidateHRInterviews } from './CandidateHRInterviews';
-export { default as JobInterviewRoom } from './JobInterviewRoom';
+// Compatibility Re-exports pointing to new Physical Module paths
+export {
+  CandidateIQDashboard,
+  CandidateDashboard,
+  MatchedRequisitions,
+  CandidateIQProfile,
+  DynamicProfileRenderer,
+  ManualProfileBuilder,
+  ProfileDraftEditor,
+  ProfileEvidenceIntelligence,
+  SkillIntelligence,
+  TechnicalSkillIntelligence,
+  SkillGapIntelligence,
+  ATSScoreGauge,
+  ResumeParserIQModal,
+  ProfileReplacementModal,
+  ScoreExplanationModal,
+  ResumeIntelligence,
+  ResumeUploader,
+  PdfDocumentViewer,
+  ResumeDetailWorkspace,
+  ResumeHistory,
+  ProfileReviewHub,
+  JobDiscovery,
+  JobTrackerView,
+  JobDetailsView,
+  JobMatchingView,
+  ApplicationTracker,
+  ApplicationModal,
+  CandidateActivityHub,
+  ActivityPracticeRoom
+} from '../../modules/candidate';

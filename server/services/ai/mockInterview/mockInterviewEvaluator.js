@@ -308,7 +308,14 @@ Question Text: "${questionItem.question || questionItem.questionText}"
 
 CANDIDATE RESPONSE (RAW EVIDENCE FOR THIS QUESTION ONLY):
 "${textOrTranscript}"
-${type === 'voice' ? `Duration: ${questionItem.durationSeconds || 0} seconds` : ''}
+${type === 'voice' ? `Voice Performance Signals:
+- Duration: ${questionItem.durationSeconds || 0}s
+- Word Count: ${questionItem.voiceMetrics?.wordCount || 0}
+- Speaking Rate: ${questionItem.voiceMetrics?.wpm || 0} WPM
+- Speaking Duration: ${questionItem.voiceMetrics?.speakingDurationSeconds || 0}s
+- Silence Duration: ${questionItem.voiceMetrics?.silenceDurationSeconds || 0}s
+- Fillers Detected: ${questionItem.voiceMetrics?.fillerCount || 0} (Rate: ${questionItem.voiceMetrics?.fillerRate || 0}%)
+- Pauses Recorded: ${questionItem.voiceMetrics?.pauseCount || 0} (Longest Pause: ${questionItem.voiceMetrics?.longestPauseSeconds || 0}s)` : ''}
 
 SCORING GUIDANCE (0 to 10):
 0: Unanswered or completely incorrect

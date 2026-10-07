@@ -1,5 +1,8 @@
-export { default as AuthModal } from './AuthModal';
-export { default as LoginModal } from './LoginModal';
-export { default as PaymentDemoModal } from './PaymentDemoModal';
-export { default as RegisterModal } from './RegisterModal';
-export { default as ForgotPasswordModal } from './ForgotPasswordModal';
+// Compatibility Re-exports pointing to new Physical Module paths
+export {
+  AuthModal,
+  ForgotPasswordModal,
+  LoginModal,
+  RegisterModal,
+  PaymentDemoModal
+} from '../../modules/shared';
