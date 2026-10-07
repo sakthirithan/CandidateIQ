@@ -24,7 +24,7 @@ export default function DynamicInterviewReport({ interview, resumeSnapshot, onCl
     window.print();
   };
 
-  const score = interview?.overallEvaluation?.overallInterviewScore || interview?.latestScore || 85;
+  const score = interview?.overallEvaluation?.overallInterviewScore ?? interview?.evaluation?.overallScore ?? interview?.latestScore ?? null;
   const targetJobTitle = interview?.jobDetails?.jobTitle || interview?.targetJobTitle || 'Full Stack Engineer';
   const company = interview?.jobDetails?.company || 'CandidateIQ Enterprise';
 
@@ -66,19 +66,19 @@ export default function DynamicInterviewReport({ interview, resumeSnapshot, onCl
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="p-4 bg-indigo-50/60 border border-indigo-200 rounded-2xl text-center">
           <span className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider block">Overall Readiness Score</span>
-          <span className="text-3xl font-black font-outfit text-indigo-950 mt-1 block">{score}/100</span>
+          <span className="text-3xl font-black font-outfit text-indigo-950 mt-1 block">{score !== null ? `${score}/100` : '—'}</span>
         </div>
         <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl text-center">
           <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider block">Technical Mastery</span>
-          <span className="text-3xl font-black font-outfit text-emerald-950 mt-1 block">{interview?.overallEvaluation?.technicalProficiency || 88}%</span>
+          <span className="text-3xl font-black font-outfit text-emerald-950 mt-1 block">{interview?.overallEvaluation?.technicalProficiency ?? interview?.evaluation?.technicalScore ?? '—'}%</span>
         </div>
         <div className="p-4 bg-purple-50/60 border border-purple-200 rounded-2xl text-center">
           <span className="text-[10px] font-extrabold text-purple-600 uppercase tracking-wider block">STAR Behavioral</span>
-          <span className="text-3xl font-black font-outfit text-purple-950 mt-1 block">{interview?.overallEvaluation?.behaviouralCompetency || 84}%</span>
+          <span className="text-3xl font-black font-outfit text-purple-950 mt-1 block">{interview?.overallEvaluation?.behaviouralCompetency ?? interview?.evaluation?.behaviouralScore ?? '—'}%</span>
         </div>
         <div className="p-4 bg-cyan-50/60 border border-cyan-200 rounded-2xl text-center">
           <span className="text-[10px] font-extrabold text-cyan-600 uppercase tracking-wider block">Communication Clarity</span>
-          <span className="text-3xl font-black font-outfit text-cyan-950 mt-1 block">{interview?.overallEvaluation?.communicationClarity || 90}%</span>
+          <span className="text-3xl font-black font-outfit text-cyan-950 mt-1 block">{interview?.overallEvaluation?.communicationClarity ?? interview?.evaluation?.communicationScore ?? '—'}%</span>
         </div>
       </div>
 

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Sparkles, CheckCircle2, AlertTriangle, ArrowRight, Play, RefreshCw, BarChart2,
   Clock, ShieldCheck, Target, Layers, ArrowLeft, Award, HelpCircle, Check, Activity,
@@ -11,15 +11,24 @@ import ActivityPracticeRoom from './ActivityPracticeRoom';
 
 export default function CandidateActivityHub({ onNavigateToInterview }) {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const queryActivityId = searchParams.get('activityId');
+
   const [loading, setLoading] = useState(true);
   const [activities, setActivities] = useState([]);
   const [interviewsGrouped, setInterviewsGrouped] = useState([]);
-  const [activePracticeId, setActivePracticeId] = useState(null);
+  const [activePracticeId, setActivePracticeId] = useState(queryActivityId || null);
 
   // Filters State
   const [statusFilter, setStatusFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  useEffect(() => {
+    if (queryActivityId) {
+      setActivePracticeId(queryActivityId);
+    }
+  }, [queryActivityId]);
 
   useEffect(() => {
     loadAllData();
@@ -29,13 +38,18 @@ export default function CandidateActivityHub({ onNavigateToInterview }) {
     setLoading(true);
     try {
       const res = await improvementService.getAllUserActivities();
-      if (res && res.activities) {
+      if (res && Array.isArray(res.activities)) {
         const rawActs = res.activities;
         setActivities(rawActs);
         groupActivitiesByInterview(rawActs);
+      } else {
+        setActivities([]);
+        setInterviewsGrouped([]);
       }
     } catch (err) {
       console.warn('Error loading activities:', err);
+      setActivities([]);
+      setInterviewsGrouped([]);
     } finally {
       setLoading(false);
     }
@@ -44,26 +58,32 @@ export default function CandidateActivityHub({ onNavigateToInterview }) {
   /**
    * Group activities by sourceInterviewId into interview-centric cards
    */
-  const groupActivitiesByInterview = (acts) => {
+  const groupActivitiesByInterview = (acts = []) => {
     const groups = {};
 
     acts.forEach((act) => {
-      const interviewId = act.sourceInterviewId || 'general_practice';
+      if (!act) return;
+      const interviewId = (typeof act.sourceInterviewId === 'object' && act.sourceInterviewId?._id)
+        ? String(act.sourceInterviewId._id)
+        : String(act.sourceInterviewId || 'general_practice');
+
+      const sourceTitle = act.sourceTitle || (typeof act.sourceInterviewId === 'object' ? act.sourceInterviewId.jobTitle : null);
+
       if (!groups[interviewId]) {
         groups[interviewId] = {
           interviewId,
-          title: act.sourceTitle || 'Mock Interview Session',
+          title: sourceTitle || 'Mock Interview Session',
           role: act.targetRole || act.category || 'Software Engineer',
           interviewType: act.interviewType || 'Technical + Behavioral',
-          createdAt: act.createdAt,
-          overallScore: act.overallScore || 74,
+          createdAt: act.createdAt || new Date().toISOString(),
+          overallScore: act.overallScore ?? 74,
           categoryScores: {
-            technical: act.technicalScore || (act.category === 'Technical' ? 82 : 78),
-            communication: act.communicationScore || (act.category === 'Communication' ? 61 : 72),
-            behavioral: act.behavioralScore || (act.category === 'Behavioral' ? 70 : 80),
-            answerStructure: act.structureScore || 65
+            technical: act.technicalScore ?? (String(act.category).toLowerCase() === 'technical' ? 82 : 78),
+            communication: act.communicationScore ?? (String(act.category).toLowerCase() === 'communication' ? 61 : 72),
+            behavioral: act.behavioralScore ?? (String(act.category).toLowerCase() === 'behavioral' ? 70 : 80),
+            answerStructure: act.structureScore ?? 65
           },
-          improvementPercentage: act.improvementPercentage || 9,
+          improvementPercentage: act.improvementPercentage ?? 9,
           activities: []
         };
       }
@@ -73,9 +93,9 @@ export default function CandidateActivityHub({ onNavigateToInterview }) {
     // Convert object to array and calculate statistics per interview card
     const interviewList = Object.values(groups).map((group) => {
       const total = group.activities.length;
-      const completed = group.activities.filter(a => a.status === 'COMPLETED').length;
-      const practiceRequired = group.activities.filter(a => a.status === 'PRACTICE_REQUIRED').length;
-      const inProgress = group.activities.filter(a => a.status === 'IN_PROGRESS' || a.status === 'PENDING').length;
+      const completed = group.activities.filter(a => a && a.status === 'COMPLETED').length;
+      const practiceRequired = group.activities.filter(a => a && a.status === 'PRACTICE_REQUIRED').length;
+      const inProgress = group.activities.filter(a => a && (a.status === 'IN_PROGRESS' || a.status === 'PENDING')).length;
 
       let status = 'IN_PROGRESS';
       if (total > 0 && completed === total) {
@@ -109,7 +129,7 @@ export default function CandidateActivityHub({ onNavigateToInterview }) {
     interviewList.sort((a, b) => {
       if (a.practiceRequiredActivities > 0 && b.practiceRequiredActivities === 0) return -1;
       if (b.practiceRequiredActivities > 0 && a.practiceRequiredActivities === 0) return 1;
-      return new Date(b.createdAt) - new Date(a.createdAt);
+      return new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
     });
 
     setInterviewsGrouped(interviewList);

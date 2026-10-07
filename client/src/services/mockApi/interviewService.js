@@ -754,7 +754,58 @@ export const mockInterviewService = {
     }
   },
 
+  getMockInterviewAnalytics: async (id) => {
+    try {
+      const response = await api.get(`/mock-interviews/${id}/analytics`);
+      return response.data;
+    } catch (err) {
+      console.warn(`[interviewService] GET /mock-interviews/${id}/analytics failed:`, err);
+      return null;
+    }
+  },
+
+  getMockInterviewReview: async (id) => {
+    try {
+      const response = await api.get(`/mock-interviews/${id}/review`);
+      return response.data;
+    } catch (err) {
+      console.warn(`[interviewService] GET /mock-interviews/${id}/review failed:`, err);
+      return null;
+    }
+  },
+
+  getMockInterviewImprovementPlan: async (id) => {
+    try {
+      const response = await api.get(`/mock-interviews/${id}/improvement-plan`);
+      return response.data;
+    } catch (err) {
+      console.warn(`[interviewService] GET /mock-interviews/${id}/improvement-plan failed:`, err);
+      return null;
+    }
+  },
+
+  getMockInterviewConsistency: async (id) => {
+    try {
+      const response = await api.get(`/mock-interviews/${id}/consistency`);
+      return response.data;
+    } catch (err) {
+      console.warn(`[interviewService] GET /mock-interviews/${id}/consistency failed:`, err);
+      return null;
+    }
+  },
+
+  getMockInterviewAdaptiveContext: async (id) => {
+    try {
+      const response = await api.get(`/mock-interviews/${id}/adaptive-context`);
+      return response.data;
+    } catch (err) {
+      console.warn(`[interviewService] GET /mock-interviews/${id}/adaptive-context failed:`, err);
+      return null;
+    }
+  },
+
   recordTabSwitch: async (sessionId) => {
+
     let session = activeSessions[sessionId] || storageMockInterviews.getById(sessionId);
     if (session) {
       session.tabSwitchCount = (session.tabSwitchCount || 0) + 1;

@@ -376,7 +376,7 @@ function InterviewEvaluationAnalytics({ initialReport, onEvaluationComplete }) {
               <div className="px-4 py-2 rounded-2xl bg-indigo-50 border border-indigo-100 text-center">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Overall Rating</span>
                 <span className="text-2xl font-black font-outfit text-indigo-900">
-                  {evaluationReport?.overallScore || 83} <span className="text-xs font-semibold text-slate-400">/ 100</span>
+                  {evaluationReport?.overallScore ?? '—'} <span className="text-xs font-semibold text-slate-400">/ 100</span>
                 </span>
               </div>
             </div>

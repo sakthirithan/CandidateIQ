@@ -8,7 +8,8 @@ import {
 } from '@/services/mockApi/interviewService';
 import { getCurrentUser } from '@/utils/auth';
 import { getScoreStatus } from '@/utils/scoreUtils';
-import Frame8AssessmentContainer from '../components/Frame8AssessmentContainer';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as RechartsTooltip, CartesianGrid, ReferenceLine } from 'recharts';
+import MockInterviewPerformanceGraph from '@/modules/candidate/interview/components/MockInterviewPerformanceGraph';
 import {
   Play, Send, Mic, Clock, Sparkles, MessageSquare, CheckCircle2, AlertCircle,
   Video, MicOff, Bot, Pause, RotateCcw, Briefcase, Calendar, Upload, FileText,
@@ -18,6 +19,78 @@ import {
   ChevronLeft, FileCheck, Info, HelpCircle, Activity, Maximize, Minimize, AlertOctagon,
   Target, Zap, Award, TrendingUp, BarChart2, CheckCircle, ArrowRight
 } from 'lucide-react';
+
+const SECTION_COLORS = {
+  overall: '#6366f1',       // Indigo
+  technical: '#3b82f6',     // Blue
+  communication: '#10b981', // Emerald
+  problemSolving: '#f59e0b',// Amber
+  behavioural: '#f43f5e',   // Rose
+  voice: '#06b6d4',         // Cyan
+  mcq: '#8b5cf6'            // Violet
+};
+
+const SECTION_LABELS = {
+  overall: 'Overall Score',
+  technical: 'Technical',
+  communication: 'Communication',
+  problemSolving: 'Problem Solving',
+  behavioural: 'Behavioural',
+  voice: 'Voice / Fluency',
+  mcq: 'MCQ Accuracy'
+};
+
+const CustomMultiAttemptTooltip = ({ active, payload, label }) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    const isCurrent = data.isCurrentAttempt;
+
+    return (
+      <div className="bg-slate-950 text-white p-4 rounded-2xl shadow-2xl border border-slate-800 max-w-sm space-y-2.5 select-text font-sans text-xs">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+          <span className="font-extrabold font-outfit text-indigo-400 flex items-center gap-1.5">
+            {label} {isCurrent && <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold text-[10px]">Current Attempt</span>}
+          </span>
+          <span className="text-[10px] text-slate-400 font-mono">
+            {data.completedAt ? new Date(data.completedAt).toLocaleDateString() : ''}
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          {payload.map((entry) => {
+            const secKey = entry.dataKey;
+            const score = entry.value;
+            const meta = data.sectionsMeta?.[secKey] || {};
+            const delta = meta.delta || 0;
+            const prev = meta.previousScore;
+            const color = entry.color;
+            const secLabel = SECTION_LABELS[secKey] || secKey;
+
+            return (
+              <div key={secKey} className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 space-y-1">
+                <div className="flex items-center justify-between font-bold">
+                  <span className="flex items-center gap-1.5 font-outfit" style={{ color }}>
+                    <span className="w-2.5 h-2.5 rounded-full inline-block" style={{ backgroundColor: color }}></span>
+                    {secLabel}
+                  </span>
+                  <span className="font-mono text-white text-[11px]">
+                    {score} {prev !== undefined && prev !== null ? `(prev: ${prev})` : ''} {delta !== 0 && (delta > 0 ? `↑ +${delta}` : `↓ ${delta}`)}
+                  </span>
+                </div>
+                {meta.evidence && (
+                  <p className="text-[11px] text-slate-300 leading-snug pl-3 border-l-2 border-indigo-500/40 font-medium">
+                    {meta.evidence}
+                  </p>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+  return null;
+};
 
 export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
   const navigate = useNavigate();
@@ -113,6 +186,45 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
   const [reviewError, setReviewError] = useState(null);
   const [solutionStatuses, setSolutionStatuses] = useState({});
   const [expandedQuestionIndex, setExpandedQuestionIndex] = useState(null);
+
+  // Multi-Attempt Consistency Analytics State
+  const [consistencyData, setConsistencyData] = useState(null);
+  const [loadingConsistency, setLoadingConsistency] = useState(false);
+  const [visibleSections, setVisibleSections] = useState({
+    overall: true,
+    technical: true,
+    communication: true,
+    problemSolving: true,
+    behavioural: true,
+    voice: true,
+    mcq: true
+  });
+
+  useEffect(() => {
+    if (flowStep === 'review' && (selectedReviewWorkspace?._id || selectedReviewWorkspace?.id)) {
+      const targetWId = selectedReviewWorkspace._id || selectedReviewWorkspace.id;
+      loadConsistencyForWorkspace(targetWId);
+    }
+  }, [flowStep, selectedReviewWorkspace]);
+
+  const loadConsistencyForWorkspace = async (wId) => {
+    try {
+      setLoadingConsistency(true);
+      const res = await mockInterviewService.getMockInterviewConsistency(wId);
+      if (res) {
+        setConsistencyData(res);
+        if (res.sections && Array.isArray(res.sections)) {
+          const vis = {};
+          res.sections.forEach(s => { vis[s] = true; });
+          setVisibleSections(vis);
+        }
+      }
+    } catch (err) {
+      console.warn('[AIMockInterviewRoom] Failed to load multi-attempt consistency:', err);
+    } finally {
+      setLoadingConsistency(false);
+    }
+  };
 
   // Dynamic Evidence & Evaluation Computation Engine
   const computeReviewData = (workspace, attempt) => {
@@ -1671,6 +1783,18 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
                   {currentQ.questionText || currentQ.question}
                 </h2>
 
+                {currentQ.adaptiveReason && (
+                  <div className="p-3 bg-indigo-50/80 rounded-2xl border border-indigo-100 text-xs text-indigo-900 leading-snug font-sans flex items-start gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-indigo-700 block text-[10px] uppercase tracking-wider font-outfit">
+                        🎯 CandidateIQ Adaptive Strategy Focus:
+                      </span>
+                      <p className="text-[#606beb] font-medium">{currentQ.adaptiveReason}</p>
+                    </div>
+                  </div>
+                )}
+
                 {currentQ.scenario && (
                   <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-700 leading-normal font-sans">
                     <span className="font-bold text-[#606beb] block mb-1 text-[10px] uppercase tracking-wider">Scenario Context:</span>
@@ -2340,6 +2464,57 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
           </div>
         ) : (
           <>
+            {/* ADAPTIVE RE-INTERVIEW REASSESSMENT & VERIFICATION BANNER */}
+            {currentAttemptObj?.adaptiveContext?.isAdaptive && (
+              <div className="bg-gradient-to-r from-slate-950 via-indigo-950 to-slate-950 rounded-3xl p-6 border border-indigo-800 text-white space-y-4 shadow-xl">
+                <div className="flex flex-wrap justify-between items-center gap-3 border-b border-indigo-800/80 pb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="px-3 py-1 rounded-full text-xs font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 flex items-center gap-1.5 font-outfit">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" /> Adaptive Re-Interview Verified
+                    </span>
+                    <span className="text-xs text-indigo-300 font-mono font-bold">
+                      Targeted Evidence Assessment (Attempt #{reviewAttempts.length - activeAttemptIndex})
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-slate-400 font-mono">
+                    Engine Version: {currentAttemptObj.adaptiveContext.algorithmVersion || '2.4-adaptive'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-sans">
+                  <div className="p-3.5 rounded-2xl bg-indigo-900/50 border border-indigo-700/60 space-y-1">
+                    <span className="text-[10px] text-indigo-300 uppercase font-bold tracking-wider block font-outfit">Adaptive Strategy</span>
+                    <p className="text-slate-200 font-medium">
+                      Generated from previous attempt weaknesses, activity progress & competency gaps.
+                    </p>
+                  </div>
+
+                  <div className="p-3.5 rounded-2xl bg-indigo-900/50 border border-indigo-700/60 space-y-1">
+                    <span className="text-[10px] text-emerald-300 uppercase font-bold tracking-wider block font-outfit">Targeted Competencies</span>
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      {(currentAttemptObj.adaptiveContext.targetWeaknesses || []).map((w, wIdx) => (
+                        <span key={wIdx} className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-200 font-mono text-[10px] font-bold border border-emerald-500/30">
+                          {w.section?.toUpperCase()} ({w.priority})
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {currentAttemptObj.evaluation?.reassessmentResults && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-950/60 border border-emerald-700/60 space-y-1">
+                      <span className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider block font-outfit">Reassessment Verification</span>
+                      <p className="text-emerald-300 font-extrabold text-sm font-outfit">
+                        Score Delta: {currentAttemptObj.evaluation.reassessmentResults.overallDelta >= 0 ? `+${currentAttemptObj.evaluation.reassessmentResults.overallDelta}` : currentAttemptObj.evaluation.reassessmentResults.overallDelta} pts
+                      </p>
+                      <span className="text-[11px] text-slate-300 font-medium block">
+                        {currentAttemptObj.evaluation.reassessmentResults.verifiedActivities?.length || 0} Practice Activity(ies) Verified
+                      </span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* ATS-STYLE HERO PERFORMANCE CARD */}
             <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-6">
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-100 pb-6">
@@ -2434,6 +2609,175 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
                   })}
                 </div>
               </div>
+            </div>
+
+            {/* MULTI-ATTEMPT CONSISTENCY ANALYTICS CARD (ACROSS ALL ATTEMPTS OF SAME MOCK INTERVIEW) */}
+            <div className="bg-white rounded-3xl p-6 md:p-8 border border-slate-200 shadow-sm space-y-6">
+              {/* MOCK INTERVIEW PERFORMANCE GRAPH (Competency Progress Waves Style) */}
+              <MockInterviewPerformanceGraph
+                data={(consistencyData?.attempts || []).map(a => ({
+                  attemptId: a.attemptId,
+                  attemptNumber: a.attemptNumber,
+                  attemptLabel: `Attempt ${a.attemptNumber}`,
+                  completedAt: a.completedAt,
+                  isCurrentAttempt: a.isCurrentAttempt,
+                  overallScore: a.overallScore ?? null,
+                  technical_knowledge: a.sections?.technical_knowledge ?? a.sections?.technical ?? null,
+                  answer_quality: a.sections?.answer_quality ?? a.sections?.behavioural ?? null,
+                  communication: a.sections?.communication ?? null,
+                  problem_solving: a.sections?.problem_solving ?? a.sections?.reasoning ?? null,
+                  concept_explanation: a.sections?.concept_explanation ?? null,
+                  fluency_pacing: a.sections?.fluency_pacing ?? a.sections?.voice ?? null,
+                  answer_structure: a.sections?.answer_structure ?? null,
+                  conciseness: a.sections?.conciseness ?? null
+                }))}
+                onPointClick={(payload) => {
+                  if (payload?.attemptId) {
+                    const foundIdx = reviewAttempts.findIndex(att => String(att._id) === String(payload.attemptId));
+                    if (foundIdx >= 0) setActiveAttemptIndex(foundIdx);
+                  }
+                }}
+              />
+
+                  {/* SECTION HIGHLIGHTS / ANALYTICS CALLOUT CARDS */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
+                    {consistencyData?.bestSection && (
+                      <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200/80 space-y-1">
+                        <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Best Performing Section</span>
+                        <span className="text-base font-black font-outfit text-emerald-900">
+                          {SECTION_LABELS[consistencyData.bestSection.section] || consistencyData.bestSection.section} ({consistencyData.bestSection.score})
+                        </span>
+                      </div>
+                    )}
+
+                    {consistencyData?.mostImprovedSection && (
+                      <div className="p-3.5 rounded-xl bg-indigo-50 border border-indigo-200/80 space-y-1">
+                        <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-wider block">Most Improved Section</span>
+                        <span className="text-base font-black font-outfit text-indigo-900">
+                          {SECTION_LABELS[consistencyData.mostImprovedSection.section] || consistencyData.mostImprovedSection.section} (+{consistencyData.mostImprovedSection.improvement} pts)
+                        </span>
+                      </div>
+                    )}
+
+                    {consistencyData?.lowestSection && (
+                      <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200/80 space-y-1">
+                        <span className="text-[10px] font-bold text-amber-800 uppercase tracking-wider block">Needs Practice Section</span>
+                        <span className="text-base font-black font-outfit text-amber-900">
+                          {SECTION_LABELS[consistencyData.lowestSection.section] || consistencyData.lowestSection.section} ({consistencyData.lowestSection.score})
+                        </span>
+                      </div>
+                    )}
+
+                    {consistencyData?.mostInconsistentSection && (
+                      <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-200/80 space-y-1">
+                        <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">Most Inconsistent Section</span>
+                        <span className="text-base font-black font-outfit text-rose-900">
+                          {SECTION_LABELS[consistencyData.mostInconsistentSection.section] || consistencyData.mostInconsistentSection.section} (±{consistencyData.mostInconsistentSection.variance} var)
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* ATTEMPT COMPARISON TABLE BELOW GRAPH */}
+                  <div className="space-y-3 pt-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-700 font-outfit uppercase tracking-wider">
+                        Attempt-by-Attempt Scores Comparison
+                      </span>
+                      <span className="text-[11px] text-slate-500 font-mono">
+                        {consistencyData?.attempts?.length} Attempts Completed
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-left text-xs font-sans">
+                        <thead className="bg-slate-50 border-b border-slate-200 font-outfit text-slate-700 font-bold uppercase text-[10px] tracking-wider">
+                          <tr>
+                            <th className="p-3">Attempt</th>
+                            <th className="p-3">Date</th>
+                            <th className="p-3 text-center">Overall</th>
+                            {(consistencyData?.sections || []).filter(s => s !== 'overall').map(s => (
+                              <th key={s} className="p-3 text-center">{SECTION_LABELS[s] || s}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {(consistencyData?.attempts || []).map((att) => {
+                            const isCurrent = att.isCurrentAttempt || (reviewAttempts[activeAttemptIndex]?._id === att.attemptId);
+                            return (
+                              <tr key={att.attemptId} className={`transition-colors ${isCurrent ? 'bg-indigo-50/70 font-bold' : 'hover:bg-slate-50'}`}>
+                                <td className="p-3 flex items-center gap-2">
+                                  <span className="font-outfit text-slate-900 font-extrabold">Attempt #{att.attemptNumber}</span>
+                                  {isCurrent && (
+                                    <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-bold">
+                                      Current
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="p-3 text-slate-500 font-mono text-[11px]">
+                                  {att.completedAt ? new Date(att.completedAt).toLocaleDateString() : '—'}
+                                </td>
+                                <td className="p-3 text-center font-mono font-extrabold text-indigo-700 text-sm">
+                                  {att.overallScore}
+                                </td>
+                                {(consistencyData?.sections || []).filter(s => s !== 'overall').map(s => {
+                                  const val = att.sections?.[s];
+                                  const meta = att.sectionsMeta?.[s] || {};
+                                  const delta = meta.delta || 0;
+                                  return (
+                                    <td key={s} className="p-3 text-center font-mono">
+                                      {val !== undefined ? (
+                                        <span>
+                                          {val} {delta !== 0 && (
+                                            <span className={`text-[10px] ml-0.5 font-bold ${delta > 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                              ({delta > 0 ? `+${delta}` : delta})
+                                            </span>
+                                          )}
+                                        </span>
+                                      ) : '—'}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
+                  {/* REPEATED WEAKNESSES / SUSTAINED IMPROVEMENTS CARDS */}
+                  {((consistencyData?.repeatedWeaknesses?.length > 0) || (consistencyData?.sustainedImprovements?.length > 0)) && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                      {consistencyData?.repeatedWeaknesses?.length > 0 && (
+                        <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 space-y-2 text-xs">
+                          <span className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wider block flex items-center gap-1 font-outfit">
+                            <AlertTriangle className="w-3.5 h-3.5 text-amber-600" /> Detected Repeated Weakness Across Attempts
+                          </span>
+                          {consistencyData.repeatedWeaknesses.map((rw, idx) => (
+                            <div key={idx} className="p-2.5 rounded-lg bg-white border border-amber-200/80 space-y-1">
+                              <span className="font-bold text-slate-900 uppercase text-[10px]">{rw.section} &bull; Recurrence: {rw.recurrenceCount} attempts</span>
+                              <p className="text-slate-700">{rw.issue}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {consistencyData?.sustainedImprovements?.length > 0 && (
+                        <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2 text-xs">
+                          <span className="text-[10px] font-extrabold text-emerald-900 uppercase tracking-wider block flex items-center gap-1 font-outfit">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Sustained Improvement Milestones
+                          </span>
+                          {consistencyData.sustainedImprovements.map((si, idx) => (
+                            <div key={idx} className="p-2.5 rounded-lg bg-white border border-emerald-200/80 space-y-1">
+                              <span className="font-bold text-slate-900 uppercase text-[10px]">{si.section} &bull; Improvement: +{si.netImprovement} pts</span>
+                              <p className="text-slate-700">{si.details}</p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
             </div>
 
             {/* STRENGTHS VS AREAS TO IMPROVE */}
@@ -3222,7 +3566,7 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredWorkspaces.map((workspace) => {
                 const isNewlyCreated = workspace._id === newlyCreatedId;
-                const latestScoreStatus = getScoreStatus(workspace.latestScore || 70);
+                const latestScoreStatus = getScoreStatus(workspace.latestScore);
 
                 return (
                   <div
@@ -3253,7 +3597,7 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
                           <p className="text-xs font-semibold text-slate-500">{workspace.jobDetails?.company}</p>
                         </div>
 
-                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${latestScoreStatus.badge}`}>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${latestScoreStatus?.badge || 'bg-slate-100 text-slate-600 border-slate-200'}`}>
                           {workspace.status || 'READY'}
                         </span>
                       </div>
@@ -3270,7 +3614,7 @@ export default function AIMockInterviewRoom({ onComplete, targetSkill }) {
                         </div>
                         <div>
                           <span className="text-[9px] font-bold text-slate-400 uppercase block">Last Score</span>
-                          <span className={`text-sm font-black font-outfit ${latestScoreStatus.color}`}>
+                          <span className={`text-sm font-black font-outfit ${latestScoreStatus?.color || 'text-slate-600'}`}>
                             {workspace.latestScore ? `${workspace.latestScore}` : '--'}
                           </span>
                         </div>

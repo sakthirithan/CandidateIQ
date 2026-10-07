@@ -5,8 +5,8 @@ class GenerateQuestionsService {
   /**
    * Generates scenario-based technical mock interview questions grounded in Candidate Resume JSON and Recruiter Job JSON.
    */
-  static async generateStructuredInterview({ resumeData, jobData, configuration }) {
-    const difficulty = (configuration.difficulty || 'medium').toLowerCase();
+  static async generateStructuredInterview({ resumeData, jobData, configuration, adaptiveBlueprint = null }) {
+    const difficulty = (adaptiveBlueprint?.targetDifficulty || configuration.difficulty || 'medium').toLowerCase();
     const assessmentMethod = (configuration.assessmentMethod || 'random').toLowerCase();
     const sections = configuration.sections || [
       { type: 'mcq', count: 15 },
@@ -58,14 +58,26 @@ class GenerateQuestionsService {
     const sharedSkills = jobSkills.filter((js) => candidateSkillSet.has(js.toLowerCase()));
     const jobOnlySkills = jobSkills.filter((js) => !candidateSkillSet.has(js.toLowerCase()));
 
+    const adaptiveSectionPrompt = adaptiveBlueprint && adaptiveBlueprint.isAdaptive ? `
+EVIDENCE-DRIVEN ADAPTIVE RE-INTERVIEW INSTRUCTIONS:
+- This is NOT a static or first-time interview. This is Attempt #${(adaptiveBlueprint.previousAttemptCount || 1) + 1} of this mock interview.
+- Previous Weaknesses to Target: ${JSON.stringify(adaptiveBlueprint.targetWeaknesses || [])}
+- Uncertain Competencies to Reassess: ${JSON.stringify(adaptiveBlueprint.targetUncertainties || [])}
+- Activity Interventions Completed/Pending: ${JSON.stringify(adaptiveBlueprint.activityInterventions || [])}
+- Previous Question Coverage (DO NOT REPEAT IDENTICAL QUESTIONS): ${JSON.stringify((adaptiveBlueprint.previousQuestionCoverage || []).map(q => q.questionText).slice(0, 10))}
+- Target Blueprint Goals: ${JSON.stringify(adaptiveBlueprint.goals || [])}
+- MANDATE: For EVERY generated question, populate an "adaptiveReason" field explaining why this question was selected based on candidate's previous attempt evidence and activities.
+` : '';
+
     const prompt = `
 You are the CandidateIQ AI Technical Interview Architect.
 Your role is to construct a rigorous, highly realistic, scenario-based Technical Mock Interview.
+${adaptiveSectionPrompt}
 
 CRITICAL MANDATE:
 - NEVER generate basic, short, or generic definition questions (e.g. "What is Node.js?", "Define MongoDB", "What is React?").
 - AT LEAST 90% of technical questions MUST be grounded in a realistic engineering situation containing: CONTEXT + PROBLEM + CONSTRAINT + TASK.
-- Questions MUST be grounded directly in the Candidate's Resume JSON and the Recruiter's Job Description JSON.
+- Questions MUST be grounded directly in the Candidate's Resume JSON, Recruiter's Job Description JSON, and Historical Adaptive Evidence.
 
 CANDIDATE RESUME PROFILE:
 - Name/Headline: ${resumeData?.name || 'Candidate'} (${resumeData?.headline || 'Software Engineer'})
@@ -84,7 +96,7 @@ SKILL OVERLAP ANALYSIS:
 - Job Requirement Gaps / Additional Target Skills: ${JSON.stringify(jobOnlySkills)}
 
 QUESTION FORMULA:
-RESUME EVIDENCE + JOB REQUIREMENT + REAL-WORLD SCENARIO + TECHNICAL CHALLENGE + CONSTRAINT + CANDIDATE TASK = INTERVIEW QUESTION
+HISTORICAL EVIDENCE + RESUME + JOB REQUISITION + REAL-WORLD SCENARIO + TECHNICAL CHALLENGE + CONSTRAINT = ADAPTIVE QUESTION
 
 TARGET CONFIGURATION:
 - Difficulty: ${difficulty.toUpperCase()}
@@ -182,6 +194,81 @@ RETURN STRICT JSON matching this structure:
     if (!Array.isArray(output.questions.voice)) output.questions.voice = [];
     if (!Array.isArray(output.questions.text)) output.questions.text = [];
 
+    // Fallback: Ensure non-empty question set if AI fails or returns empty set
+    if (output.questions.mcq.length === 0 && output.questions.voice.length === 0 && output.questions.text.length === 0) {
+      const primarySkill = candidateSkills[0] || jobSkills[0] || 'Full Stack Software Engineering';
+      output.questions = {
+        mcq: [
+          {
+            questionId: 'mcq-fb-001',
+            question: `In a production architecture tailored for ${jobData?.title || 'Engineering'}, write latency spikes under 500 concurrent submissions. Which connection pool & indexing strategy best mitigates database bottlenecking?`,
+            scenario: 'High concurrency write latency spike in database backend under load.',
+            task: 'Select the optimal connection pooling and index optimization strategy.',
+            options: [
+              'Configure dedicated connection pooling with compound indexing on query filter fields',
+              'Increase server CPU count without modifying connection limits or queries',
+              'Disable database logging and convert all POST requests to GET',
+              'Store database credentials in local storage on the client browser'
+            ],
+            correctAnswer: 'Configure dedicated connection pooling with compound indexing on query filter fields',
+            topic: `${primarySkill} Architecture`,
+            difficulty,
+            expectedSkills: [primarySkill, 'Performance Tuning'],
+            resumeEvidence: [primarySkill],
+            jobEvidence: ['Scalability'],
+            evaluationFocus: ['technical accuracy', 'database performance']
+          },
+          {
+            questionId: 'mcq-fb-002',
+            question: `When securing API endpoints requiring role-based access control (RBAC), JWT signature validation passes but role claims are unverified in middleware. What security vulnerability does this present?`,
+            scenario: 'JWT authentication active but missing RBAC authorization checks.',
+            task: 'Identify the security risk.',
+            options: [
+              'Privilege escalation allowing unauthorized access to restricted endpoints',
+              'Cross-Site Scripting (XSS) in static asset delivery',
+              'CORS policy origin header mismatch',
+              'Memory leak in frontend state manager'
+            ],
+            correctAnswer: 'Privilege escalation allowing unauthorized access to restricted endpoints',
+            topic: 'API Security & RBAC',
+            difficulty,
+            expectedSkills: ['Security', 'REST APIs'],
+            resumeEvidence: ['Backend Security'],
+            jobEvidence: ['Authorization'],
+            evaluationFocus: ['security compliance', 'authorization']
+          }
+        ],
+        voice: [
+          {
+            questionId: 'voice-fb-001',
+            question: `Talk me through your step-by-step diagnostic process when analyzing a production API latency spike. How do you isolate issues across load balancers, application middleware, database queries, and external service dependencies?`,
+            scenario: 'Production latency spike across distributed system layers.',
+            task: 'Explain diagnostic methodology verbally.',
+            topic: 'System Architecture & Production Debugging',
+            difficulty,
+            expectedSkills: [primarySkill, 'System Design', 'Debugging'],
+            resumeEvidence: [primarySkill],
+            jobEvidence: ['Production Systems'],
+            evaluationFocus: ['diagnostic clarity', 'system design reasoning']
+          }
+        ],
+        text: [
+          {
+            questionId: 'text-fb-001',
+            question: `Describe how you would implement asynchronous background processing using a queue system for heavy data processing without blocking the Node.js event loop. Detail worker retry policies, failure handling, and result persistence.`,
+            scenario: 'Heavy background task blocking main event loop.',
+            task: 'Provide detailed architectural plan.',
+            topic: 'Asynchronous Architecture & Task Queues',
+            difficulty,
+            expectedSkills: [primarySkill, 'Async Architecture'],
+            resumeEvidence: [primarySkill],
+            jobEvidence: ['Distributed Queues'],
+            evaluationFocus: ['architectural depth', 'non-blocking event loop design']
+          }
+        ]
+      };
+    }
+
     // Quality Gate Validation: Reject trivial definition questions
     output.questions.mcq = GenerateQuestionsService.filterQualityGate(output.questions.mcq, 'mcq');
     output.questions.voice = GenerateQuestionsService.filterQualityGate(output.questions.voice, 'voice');
@@ -213,6 +300,18 @@ RETURN STRICT JSON matching this structure:
       }
       if (!q.evaluationFocus || q.evaluationFocus.length === 0) {
         q.evaluationFocus = ['technical accuracy', 'reasoning', 'problem solving'];
+      }
+      if (!q.adaptiveReason) {
+        q.adaptiveReason = `Targeted assessment for ${q.topic || 'technical proficiency'} grounded in candidate background and job requirements.`;
+      }
+      if (!q.adaptiveMetadata) {
+        q.adaptiveMetadata = {
+          source: 'adaptive-blueprint',
+          competency: q.topic || 'technical',
+          topic: q.topic || 'architecture',
+          objective: q.task || 'Technical Assessment',
+          priority: q.difficulty === 'hard' ? 'CRITICAL' : 'HIGH'
+        };
       }
 
       return q;

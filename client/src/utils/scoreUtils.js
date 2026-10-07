@@ -3,6 +3,21 @@
  * Evaluates a numeric score (0-100) and returns unified labels, color tokens, and background classes.
  */
 export function getScoreStatus(score) {
+  if (score === null || score === undefined || score === '') {
+    return {
+      score: null,
+      label: 'Pending',
+      color: 'text-slate-600',
+      textColor: 'text-slate-600',
+      bg: 'bg-slate-50',
+      border: 'border-slate-200',
+      badge: 'bg-slate-100 text-slate-700 border-slate-200',
+      progressColor: 'bg-slate-400',
+      gradient: 'from-slate-400 to-slate-500',
+      hex: '#94a3b8'
+    };
+  }
+
   const numScore = Math.min(100, Math.max(0, Math.round(Number(score) || 0)));
 
   if (numScore >= 90) {

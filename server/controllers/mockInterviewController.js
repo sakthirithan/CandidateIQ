@@ -294,11 +294,25 @@ const createMockInterviewAttempt = async (req, res, next) => {
       sections: sectionsConfig
     };
 
-    // Generate AI Questions tailored to Resume + Job Details
+    // Build Evidence-Driven Adaptive Blueprint from Previous Attempt History
+    const AdaptiveInterviewEngine = require('../services/ai/mockInterview/adaptiveInterviewEngine');
+    const adaptiveBlueprint = await AdaptiveInterviewEngine.createAdaptiveBlueprint({
+      workspaceId: workspace._id,
+      candidateId,
+      jobDetails: workspace.jobDetails,
+      configuration: workspace.configuration
+    });
+
+    if (adaptiveBlueprint && adaptiveBlueprint.isAdaptive && adaptiveBlueprint.targetDifficulty) {
+      config.difficulty = adaptiveBlueprint.targetDifficulty.toLowerCase();
+    }
+
+    // Generate AI Questions tailored to Resume + Job Details + Historical Adaptive Evidence
     const generatedAI = await GenerateQuestionsService.generateStructuredInterview({
       resumeData,
       jobData,
-      configuration: config
+      configuration: config,
+      adaptiveBlueprint
     });
 
     const mcqQuestions = generatedAI.questions.mcq || [];
@@ -315,6 +329,8 @@ const createMockInterviewAttempt = async (req, res, next) => {
         targetSkill: (q.expectedSkills && q.expectedSkills[0]) || 'Technical',
         options: (q.options || []).map((opt, idx) => ({ id: String.fromCharCode(65 + idx), text: opt })),
         correctAnswer: q.correctAnswer,
+        adaptiveReason: q.adaptiveReason || `Targeted assessment for ${q.topic || 'technical proficiency'}`,
+        adaptiveMetadata: q.adaptiveMetadata || { source: 'adaptive-blueprint', competency: q.topic || 'technical' },
         candidateResponse: ''
       })),
       ...voiceQuestions.map((q) => ({
@@ -323,6 +339,8 @@ const createMockInterviewAttempt = async (req, res, next) => {
         category: 'voice',
         questionText: q.question,
         targetSkill: (q.expectedSkills && q.expectedSkills[0]) || 'Architecture & Communication',
+        adaptiveReason: q.adaptiveReason || `Targeted voice assessment for ${q.topic || 'communication'}`,
+        adaptiveMetadata: q.adaptiveMetadata || { source: 'adaptive-blueprint', competency: q.topic || 'communication' },
         candidateResponse: ''
       })),
       ...textQuestions.map((q) => ({
@@ -331,11 +349,27 @@ const createMockInterviewAttempt = async (req, res, next) => {
         category: 'text',
         questionText: q.question,
         targetSkill: (q.expectedSkills && q.expectedSkills[0]) || 'Problem Solving',
+        adaptiveReason: q.adaptiveReason || `Targeted text reasoning for ${q.topic || 'problem solving'}`,
+        adaptiveMetadata: q.adaptiveMetadata || { source: 'adaptive-blueprint', competency: q.topic || 'problem-solving' },
         candidateResponse: ''
       }))
     ];
 
-    // Create Attempt preserving configuration snapshot
+    // Safety Fallback: Ensure attempt contains questions
+    if (flatQuestions.length === 0) {
+      flatQuestions.push({
+        questionId: 'voice-default-01',
+        sourceKeyword: 'Architecture',
+        category: 'voice',
+        questionText: `Describe your technical background for ${workspace.jobDetails.jobTitle || 'Software Engineer'} and explain your step-by-step approach to designing resilient applications.`,
+        targetSkill: 'Architecture & Communication',
+        adaptiveReason: 'Baseline architectural assessment',
+        adaptiveMetadata: { source: 'safety-fallback', competency: 'architecture' },
+        candidateResponse: ''
+      });
+    }
+
+    // Create Attempt preserving configuration snapshot & adaptive context
     const attempt = await Interview.create({
       candidate: candidateId,
       candidateIdString: candidateId.toString(),
@@ -345,8 +379,19 @@ const createMockInterviewAttempt = async (req, res, next) => {
       interviewCategory: 'mock',
       questionSource: 'resume_keywords',
       interviewType: workspace.configuration.interviewType,
-      difficulty: workspace.configuration.difficulty,
+      difficulty: adaptiveBlueprint?.targetDifficulty || workspace.configuration.difficulty,
       status: 'ready',
+      adaptiveContext: {
+        isAdaptive: adaptiveBlueprint?.isAdaptive || false,
+        sourceAttemptIds: adaptiveBlueprint?.sourceAttemptIds || [],
+        adaptiveBlueprint,
+        targetWeaknesses: adaptiveBlueprint?.targetWeaknesses || [],
+        targetUncertainties: adaptiveBlueprint?.targetUncertainties || [],
+        activityInterventions: adaptiveBlueprint?.activityInterventions || [],
+        previousCoverage: adaptiveBlueprint?.previousQuestionCoverage || [],
+        generatedAt: new Date(),
+        algorithmVersion: '2.4-adaptive'
+      },
       configurationSnapshot: {
         resumeId: workspace.resumeId,
         resumeName: workspace.resumeName,
@@ -531,11 +576,71 @@ const completeMockInterview = async (req, res, next) => {
       }
     }
 
+    // Closed-Loop Reassessment Verification & Competency Profile Update
+    const previousAttempts = await Interview.find({
+      workspaceId: interview.workspaceId,
+      candidate: candidateId,
+      status: 'completed',
+      _id: { $ne: interview._id }
+    }).sort({ createdAt: -1 });
+
+    if (previousAttempts.length > 0) {
+      const reassessmentResults = await AdaptiveInterviewEngine.compareAndVerifyReassessment({
+        previousAttempt: previousAttempts[0],
+        currentAttempt: interview,
+        candidateId,
+        workspaceId: interview.workspaceId
+      });
+
+      if (reassessmentResults && evaluation) {
+        evaluation.reassessmentResults = reassessmentResults;
+        interview.evaluation = evaluation;
+        await interview.save();
+      }
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Mock Interview completed and workspace updated.',
       evaluation,
       interview
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Adaptive Context & Reassessment Analysis for an Interview
+// @route   GET /api/mock-interviews/:id/adaptive-context
+// @access  Private (Candidate)
+const getMockInterviewAdaptiveContext = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const candidateId = req.user.id || req.user._id;
+
+    const interview = await Interview.findById(id);
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview attempt not found.' });
+    }
+
+    const AdaptiveInterviewEngine = require('../services/ai/mockInterview/adaptiveInterviewEngine');
+    const blueprint = await AdaptiveInterviewEngine.createAdaptiveBlueprint({
+      workspaceId: interview.workspaceId || interview._id,
+      candidateId,
+      jobDetails: interview.configurationSnapshot?.jobDetails || {},
+      configuration: interview.configurationSnapshot?.configuration || {}
+    });
+
+    const CompetencyProfile = require('../models/CompetencyProfile');
+    const competencyProfiles = await CompetencyProfile.find({ candidateId, workspaceId: interview.workspaceId });
+
+    return res.status(200).json({
+      success: true,
+      interviewId: id,
+      adaptiveContext: interview.adaptiveContext || null,
+      reassessmentResults: interview.evaluation?.reassessmentResults || null,
+      blueprint,
+      competencyProfiles
     });
   } catch (error) {
     next(error);
@@ -633,6 +738,315 @@ const evaluateSingleQuestionController = async (req, res) => {
   return res.status(200).json({ success: true });
 };
 
+// @desc    Get Mock Interview Analytics (Consistency, Timeline, HR Data)
+// @route   GET /api/mock-interviews/:id/analytics
+// @access  Private (Candidate / HR)
+const getMockInterviewAnalytics = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    let interview = await Interview.findById(id);
+    if (!interview) {
+      const workspace = await MockInterviewWorkspace.findById(id);
+      if (workspace && workspace.latestAttemptId) {
+        interview = await Interview.findById(workspace.latestAttemptId);
+      }
+    }
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview evaluation not found.' });
+    }
+
+    const evaluation = interview.evaluation || {};
+    return res.status(200).json({
+      success: true,
+      interviewId: interview._id,
+      overallScore: evaluation.overallScore ?? interview.overallEvaluation?.overallInterviewScore ?? 0,
+      consistencyAnalytics: evaluation.consistencyAnalytics || {},
+      sectionScores: evaluation.sectionScores || {},
+      performanceTimeline: evaluation.performanceTimeline || [],
+      performanceDrops: evaluation.performanceDrops || [],
+      hrAnalytics: evaluation.hrAnalytics || {}
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Mock Interview Structured Review
+// @route   GET /api/mock-interviews/:id/review
+// @access  Private (Candidate / HR)
+const getMockInterviewReview = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    let interview = await Interview.findById(id);
+    if (!interview) {
+      const workspace = await MockInterviewWorkspace.findById(id);
+      if (workspace && workspace.latestAttemptId) {
+        interview = await Interview.findById(workspace.latestAttemptId);
+      }
+    }
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview record not found.' });
+    }
+
+    return res.status(200).json({
+      success: true,
+      interview,
+      evaluation: interview.evaluation || null
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Mock Interview Improvement Recommendations
+// @route   GET /api/mock-interviews/:id/improvement-plan
+// @access  Private (Candidate)
+const getMockInterviewImprovementPlan = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    let interview = await Interview.findById(id);
+    if (!interview) {
+      const workspace = await MockInterviewWorkspace.findById(id);
+      if (workspace && workspace.latestAttemptId) {
+        interview = await Interview.findById(workspace.latestAttemptId);
+      }
+    }
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview record not found.' });
+    }
+
+    const recommendations = interview.evaluation?.improvementRecommendations || [];
+    return res.status(200).json({
+      success: true,
+      interviewId: interview._id,
+      improvementRecommendations: recommendations,
+      actionItems: recommendations
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get Multi-Attempt Consistency Analytics for a Mock Interview Workspace
+// @route   GET /api/mock-interviews/:id/consistency
+// @access  Private (Candidate / HR)
+const getMockInterviewConsistency = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    let workspace = await MockInterviewWorkspace.findById(id);
+    let attempts = [];
+
+    if (workspace) {
+      attempts = await Interview.find({
+        $or: [{ workspaceId: id }, { workspaceId: workspace._id }]
+      }).sort({ createdAt: 1 });
+    } else {
+      const targetInterview = await Interview.findById(id);
+      if (targetInterview) {
+        if (targetInterview.workspaceId) {
+          workspace = await MockInterviewWorkspace.findById(targetInterview.workspaceId);
+          attempts = await Interview.find({
+            $or: [{ workspaceId: targetInterview.workspaceId }, { workspaceId: targetInterview.workspaceId.toString() }]
+          }).sort({ createdAt: 1 });
+        } else {
+          attempts = await Interview.find({
+            $or: [
+              { candidate: targetInterview.candidate },
+              { candidateIdString: targetInterview.candidateIdString }
+            ],
+            jobTitle: targetInterview.jobTitle
+          }).sort({ createdAt: 1 });
+
+          if (!attempts || attempts.length === 0) {
+            attempts = [targetInterview];
+          }
+        }
+      }
+    }
+
+    if (!attempts || attempts.length === 0) {
+      return res.status(404).json({ success: false, message: 'No mock interview attempts found.' });
+    }
+
+    const sanitizeScore = (val) => {
+      if (val === undefined || val === null || isNaN(val)) return null;
+      const num = Number(val);
+      if (num < 0) return 0;
+      if (num > 100) return 100;
+      return Math.round(num);
+    };
+
+    const formattedAttempts = attempts.map((att, idx) => {
+      const ev = att.evaluation || {};
+      const ov = att.overallEvaluation || {};
+      const eng = att.englishLanguageAnalysis || {};
+
+      const overallScore = sanitizeScore(ev.overallScore ?? ov.overallInterviewScore);
+      const technical = sanitizeScore(ev.technicalScore ?? ov.technicalProficiency);
+      const communication = sanitizeScore(ev.communicationScore ?? ov.communicationClarity);
+      const reasoning = sanitizeScore(ev.reasoningScore ?? ov.problemSolvingRating);
+      const behavioural = sanitizeScore(ev.behaviouralScore ?? ov.behaviouralCompetency);
+      const voice = sanitizeScore(eng.fluencyScore ?? ev.sectionScores?.voice?.score);
+      const mcq = sanitizeScore(ev.sectionScores?.mcq?.score);
+
+      const isCurrentAttempt = att._id.toString() === id.toString();
+
+      const sections = {
+        overall: overallScore,
+        technical,
+        communication,
+        reasoning,
+        behavioural,
+        voice,
+        mcq,
+        // Canonical 8 competencies matching InterviewJourney
+        technical_knowledge: technical ?? overallScore,
+        answer_quality: behavioural ?? overallScore,
+        concept_explanation: sanitizeScore(ev.depthScore) ?? technical ?? overallScore,
+        problem_solving: reasoning ?? overallScore,
+        fluency_pacing: voice ?? communication ?? overallScore,
+        answer_structure: sanitizeScore(eng.coherenceScore ?? eng.grammarScore) ?? communication ?? overallScore,
+        conciseness: sanitizeScore(eng.clarityScore ?? eng.vocabularyScore) ?? communication ?? overallScore
+      };
+
+      // Compute section deltas relative to previous attempt
+      const sectionsMeta = {};
+      if (idx > 0) {
+        const prevSections = attempts[idx - 1].evaluation || {};
+        const prevOverall = attempts[idx - 1].overallEvaluation || {};
+        const prevScores = {
+          overall: sanitizeScore(prevSections.overallScore ?? prevOverall.overallInterviewScore),
+          technical: sanitizeScore(prevSections.technicalScore ?? prevOverall.technicalProficiency),
+          communication: sanitizeScore(prevSections.communicationScore ?? prevOverall.communicationClarity),
+          reasoning: sanitizeScore(prevSections.reasoningScore ?? prevOverall.problemSolvingRating),
+          behavioural: sanitizeScore(prevSections.behaviouralScore ?? prevOverall.behaviouralCompetency),
+          voice: sanitizeScore(prevSections.sectionScores?.voice?.score),
+          mcq: sanitizeScore(prevSections.sectionScores?.mcq?.score),
+          technical_knowledge: sanitizeScore(prevSections.technicalScore ?? prevOverall.technicalProficiency),
+          answer_quality: sanitizeScore(prevSections.behaviouralScore ?? prevOverall.behaviouralCompetency),
+          concept_explanation: sanitizeScore(prevSections.depthScore),
+          problem_solving: sanitizeScore(prevSections.reasoningScore ?? prevOverall.problemSolvingRating),
+          fluency_pacing: sanitizeScore(prevSections.sectionScores?.voice?.score),
+          answer_structure: sanitizeScore(prevSections.communicationScore),
+          conciseness: sanitizeScore(prevSections.communicationScore)
+        };
+
+        Object.keys(sections).forEach(secKey => {
+          const currentVal = sections[secKey];
+          const prevVal = prevScores[secKey];
+          if (currentVal !== null && prevVal !== null && prevVal !== undefined) {
+            sectionsMeta[secKey] = {
+              previousScore: prevVal,
+              delta: currentVal - prevVal,
+              evidence: currentVal >= prevVal
+                ? `Improved by +${currentVal - prevVal} points from Attempt #${idx}`
+                : `Adjusted by ${currentVal - prevVal} points from Attempt #${idx}`
+            };
+          }
+        });
+      }
+
+      return {
+        attemptId: att._id.toString(),
+        attemptNumber: idx + 1,
+        isCurrentAttempt,
+        createdAt: att.createdAt,
+        completedAt: att.completedAt || att.startedAt || att.updatedAt,
+        status: att.status,
+        overallScore,
+        sections,
+        sectionsMeta,
+        strengths: ev.strengths || ov.topStrengths || [],
+        weaknesses: ev.improvements || ov.recommendedImprovementAreas || [],
+        feedback: ev.finalFeedback || ov.summaryExplanation || ''
+      };
+    });
+
+    const sectionKeys = ['overall', 'technical_knowledge', 'communication', 'problem_solving', 'answer_quality', 'concept_explanation', 'fluency_pacing', 'answer_structure', 'conciseness', 'technical', 'reasoning', 'behavioural', 'voice', 'mcq'];
+    const availableSections = sectionKeys.filter(sec =>
+      formattedAttempts.some(att => att.sections[sec] !== null && att.sections[sec] !== undefined)
+    );
+
+    const sectionDeltas = {};
+    const sectionVariances = {};
+    const repeatedWeaknesses = [];
+    const sustainedImprovements = [];
+
+    availableSections.forEach(sec => {
+      const scores = formattedAttempts.map(a => a.sections[sec]).filter(s => s !== null);
+      if (scores.length > 0) {
+        const first = scores[0];
+        const last = scores[scores.length - 1];
+        const delta = last - first;
+        sectionDeltas[sec] = delta;
+
+        const mean = scores.reduce((a, b) => a + b, 0) / scores.length;
+        const variance = scores.reduce((sum, s) => sum + Math.pow(s - mean, 2), 0) / scores.length;
+        sectionVariances[sec] = Math.round(Math.sqrt(variance) * 10) / 10;
+
+        const lowCount = scores.filter(s => s < 70).length;
+        if (lowCount >= 2) {
+          repeatedWeaknesses.push({
+            section: sec,
+            occurrences: lowCount,
+            latestScore: last,
+            message: `${sec.replace('_', ' ').toUpperCase()} score has remained under 70 across ${lowCount} attempts.`
+          });
+        }
+
+        if (delta >= 10 && scores.length >= 2) {
+          sustainedImprovements.push({
+            section: sec,
+            totalGain: delta,
+            message: `${sec.replace('_', ' ').toUpperCase()} improved by +${delta} points from Attempt 1 (${first}) to Attempt ${scores.length} (${last}).`
+          });
+        }
+      }
+    });
+
+    let bestSection = null, maxScore = -1;
+    let mostImprovedSection = null, maxDelta = -999;
+    let lowestSection = null, minScore = 999;
+    let mostInconsistentSection = null, maxVar = -1;
+
+    availableSections.forEach(sec => {
+      const scores = formattedAttempts.map(a => a.sections[sec]).filter(s => s !== null);
+      if (scores.length > 0) {
+        const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+        const last = scores[scores.length - 1];
+        if (avg > maxScore) { maxScore = Math.round(avg); bestSection = sec; }
+        if (last < minScore) { minScore = last; lowestSection = sec; }
+
+        const delta = sectionDeltas[sec] ?? 0;
+        if (delta > maxDelta) { maxDelta = delta; mostImprovedSection = sec; }
+
+        const variance = sectionVariances[sec] ?? 0;
+        if (variance > maxVar && scores.length >= 2) { maxVar = variance; mostInconsistentSection = sec; }
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      mockInterviewId: workspace?._id || id,
+      jobTitle: workspace?.jobDetails?.jobTitle || attempts[0]?.jobTitle || 'AI Mock Interview',
+      company: workspace?.jobDetails?.company || attempts[0]?.company || 'CandidateIQ Enterprise',
+      totalAttemptsCount: attempts.length,
+      consistencyScore: formattedAttempts.length > 1 ? Math.min(100, Math.max(0, 80 + Math.round(maxDelta / 2))) : (formattedAttempts[0]?.overallScore || 75),
+      availableSections,
+      sections: availableSections,
+      attempts: formattedAttempts,
+      bestSection: bestSection ? { section: bestSection, score: maxScore } : null,
+      mostImprovedSection: mostImprovedSection && maxDelta > 0 ? { section: mostImprovedSection, improvement: maxDelta } : null,
+      lowestSection: lowestSection ? { section: lowestSection, score: minScore } : null,
+      mostInconsistentSection: mostInconsistentSection && maxVar > 5 ? { section: mostInconsistentSection, variance: maxVar } : null,
+      repeatedWeaknesses,
+      sustainedImprovements
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   createMockInterviewWorkspace,
   getCandidateMockInterviews,
@@ -646,5 +1060,12 @@ module.exports = {
   getGenerationProgressStream,
   getEvaluationProgressStream,
   evaluateMockInterviewController,
-  evaluateSingleQuestionController
+  evaluateSingleQuestionController,
+  getMockInterviewAnalytics,
+  getMockInterviewReview,
+  getMockInterviewImprovementPlan,
+  getMockInterviewConsistency,
+  getMockInterviewAdaptiveContext
 };
+
+

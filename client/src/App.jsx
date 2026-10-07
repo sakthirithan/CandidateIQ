@@ -420,8 +420,22 @@ function App() {
             <Route path="/interview-evaluation" element={<Navigate to="/mock-interview" replace />} />
             <Route path="/interview/:interviewId/improvement" element={<InterviewImprovementRouteWrapper />} />
             <Route path="/interviews/:interviewId/improvement" element={<InterviewImprovementRouteWrapper />} />
-            <Route path="/activities" element={<CandidateActivityHub onNavigateToInterview={() => navigateTab('interview')} />} />
-            <Route path="/activities/:activityId" element={<CandidateActivityHub onNavigateToInterview={() => navigateTab('interview')} />} />
+            <Route
+              path="/activities"
+              element={
+                <ErrorBoundary title="Activities Engine Error">
+                  <CandidateActivityHub onNavigateToInterview={() => navigateTab('interview')} />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/activities/:activityId"
+              element={
+                <ErrorBoundary title="Activities Practice Error">
+                  <CandidateActivityHub onNavigateToInterview={() => navigateTab('interview')} />
+                </ErrorBoundary>
+              }
+            />
             <Route path="/skill-gaps" element={<SkillGapIntelligence />} />
 
             {/* Recruiter Routes */}

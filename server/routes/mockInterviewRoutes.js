@@ -13,7 +13,12 @@ const {
   getGenerationProgressStream,
   getEvaluationProgressStream,
   evaluateMockInterviewController,
-  evaluateSingleQuestionController
+  evaluateSingleQuestionController,
+  getMockInterviewAnalytics,
+  getMockInterviewReview,
+  getMockInterviewImprovementPlan,
+  getMockInterviewConsistency,
+  getMockInterviewAdaptiveContext
 } = require('../controllers/mockInterviewController');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -21,6 +26,11 @@ const { protect } = require('../middleware/authMiddleware');
 router.get('/', protect, getCandidateMockInterviews);
 router.post('/', protect, createMockInterviewWorkspace);
 router.get('/:id', protect, getMockInterviewById);
+router.get('/:id/analytics', protect, getMockInterviewAnalytics);
+router.get('/:id/review', protect, getMockInterviewReview);
+router.get('/:id/improvement-plan', protect, getMockInterviewImprovementPlan);
+router.get('/:id/consistency', protect, getMockInterviewConsistency);
+router.get('/:id/adaptive-context', protect, getMockInterviewAdaptiveContext);
 router.patch('/:id', protect, updateMockInterviewWorkspace);
 router.delete('/:id', protect, deleteMockInterviewWorkspace);
 
@@ -35,3 +45,5 @@ router.post('/:id/complete', protect, completeMockInterview);
 router.post('/:id/evaluate', protect, evaluateMockInterviewController);
 
 module.exports = router;
+
+

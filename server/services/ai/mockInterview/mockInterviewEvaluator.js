@@ -585,6 +585,349 @@ async function evaluateMockInterview(interviewDoc, force = false, progressCallba
     overallScore = Math.round(weights.reduce((a, b) => a + b, 0) / totalWeight);
   }
 
+/**
+ * Helper to compute 4-Level Evaluation Hierarchy & Consistency Analytics Engine
+ */
+function computeComprehensiveInterviewAnalytics(allQuestionItems, overallScore, technicalScore, communicationScore, reasoningScore, behaviouralScore) {
+  const performanceTimeline = [];
+  let prevScore = null;
+  const questionScores = [];
+  const drops = [];
+
+  allQuestionItems.forEach(({ item, type }, idx) => {
+    const qNum = idx + 1;
+    const qId = item.questionId || `q_${qNum}`;
+    const topic = item.topic || (type === 'mcq' ? 'Technical MCQ' : type === 'voice' ? 'Voice Architecture' : 'Written System Design');
+    const difficulty = item.difficulty || 'Medium';
+
+    let score = 0;
+    let techScore = 0;
+    let commScore = null;
+    let reasScore = null;
+
+    const ev = item.evaluation || {};
+    if (type === 'mcq') {
+      score = ev.isCorrect ? 100 : (ev.score ? ev.score * 10 : 0);
+      techScore = score;
+    } else {
+      techScore = ev.technicalAccuracy?.score !== undefined && ev.technicalAccuracy?.score !== null ? ev.technicalAccuracy.score * 10 : (ev.isCorrect ? 100 : 50);
+      commScore = ev.communication?.score !== undefined && ev.communication?.score !== null ? ev.communication.score * 10 : null;
+      reasScore = ev.reasoning?.score !== undefined && ev.reasoning?.score !== null ? ev.reasoning.score * 10 : null;
+      
+      if (commScore !== null && reasScore !== null) {
+        score = Math.round(techScore * 0.5 + commScore * 0.25 + reasScore * 0.25);
+      } else {
+        score = techScore;
+      }
+    }
+
+    let expectedBaseline = 75;
+    if (String(difficulty).toLowerCase() === 'hard') expectedBaseline = 65;
+    if (String(difficulty).toLowerCase() === 'easy') expectedBaseline = 85;
+    const normalizedScore = Math.max(0, Math.min(100, score + (75 - expectedBaseline)));
+
+    questionScores.push(score);
+
+    const delta = prevScore !== null ? score - prevScore : 0;
+    let status = 'stable';
+    if (idx > 0 && drops.length > 0 && delta >= 10) {
+      status = 'recovery';
+    } else if (score >= 90) {
+      status = 'strong';
+    } else if (delta >= 12) {
+      status = 'significant_improvement';
+    } else if (delta >= 6) {
+      status = 'improving';
+    } else if (delta <= -12) {
+      status = 'significant_drop';
+    } else if (delta <= -6) {
+      status = 'declining';
+    } else {
+      status = 'stable';
+    }
+
+    let whatChanged = '';
+    let why = '';
+    let impact = '';
+    let recommendedImprovement = '';
+
+    if (status === 'recovery') {
+      whatChanged = 'Recovery detected after previous performance drop.';
+      why = 'Candidate recovered technical focus, answer completeness, and confidence.';
+      impact = `Recovered by +${delta} points following previous drop.`;
+      recommendedImprovement = 'Maintain steady composure throughout technical scenarios.';
+    } else if (status === 'strong') {
+      whatChanged = 'High performance demonstrated.';
+      why = ev.feedback || 'Exceptional technical accuracy with practical implementation examples.';
+      impact = `High score of ${score}/100 achieved.`;
+      recommendedImprovement = 'Continue providing concrete implementation examples.';
+    } else if (status === 'significant_improvement' || status === 'improving') {
+      whatChanged = 'Technical accuracy and explanation depth increased.';
+      why = ev.feedback || 'Candidate connected domain concepts with practical implementation details.';
+      impact = `Performance increased by +${delta} points.`;
+      recommendedImprovement = 'Maintain providing structured technical examples.';
+    } else if (status === 'significant_drop' || status === 'declining') {
+      if (commScore !== null && commScore < 60) {
+        whatChanged = 'Communication clarity and response structure dropped.';
+        why = 'Answer was partially correct but lacked structured explanation sequence and had lower clarity.';
+        impact = `Communication & overall score dropped by ${Math.abs(delta)} points.`;
+        recommendedImprovement = 'Practice structured STAR/PEEL-style technical responses.';
+      } else if (techScore < 60) {
+        whatChanged = 'Technical accuracy and edge-case coverage decreased.';
+        why = 'Candidate struggled with scenario-specific architectural requirements.';
+        impact = `Technical performance dropped by ${Math.abs(delta)} points.`;
+        recommendedImprovement = 'Review core architectural patterns and error-handling edge cases.';
+      } else {
+        whatChanged = 'Answer depth decreased under question constraints.';
+        why = ev.feedback || 'Response lacked specific trade-off analysis.';
+        impact = `Performance dropped by ${Math.abs(delta)} points.`;
+        recommendedImprovement = 'Articulate space/time trade-offs explicitly.';
+      }
+
+      drops.push({
+        sequence: qNum,
+        questionId: qId,
+        topic,
+        score,
+        previousScore: prevScore,
+        delta,
+        whatChanged,
+        why,
+        impact,
+        recommendedImprovement,
+        evidence: ev.missingAreas || []
+      });
+    } else {
+      whatChanged = 'Stable performance across question sequence.';
+      why = 'Consistent alignment with expected scenario criteria.';
+      impact = `Delta: ${delta >= 0 ? '+' : ''}${delta} pts (Stable performance)`;
+      recommendedImprovement = 'Continue consistent technical precision.';
+    }
+
+    performanceTimeline.push({
+      sequence: qNum,
+      questionId: qId,
+      section: type,
+      topic,
+      difficulty,
+      score,
+      normalizedScore,
+      technicalScore: techScore,
+      communicationScore: commScore,
+      reasoningScore: reasScore,
+      deltaFromPrevious: delta,
+      status,
+      hoverAnalysis: {
+        sequence: qNum,
+        questionId: qId,
+        section: type,
+        topic,
+        score,
+        previousScore: prevScore,
+        delta,
+        status,
+        whatChanged,
+        why,
+        impact,
+        recommendedImprovement
+      },
+      strengths: ev.demonstratedEvidence || [],
+      weaknesses: ev.missingAreas || [],
+      feedback: ev.feedback || ''
+    });
+
+    prevScore = score;
+  });
+
+  const n = questionScores.length;
+  const meanScore = n > 0 ? Math.round(questionScores.reduce((a, b) => a + b, 0) / n) : 0;
+  
+  const variance = n > 0 ? questionScores.reduce((sum, s) => sum + Math.pow(s - meanScore, 2), 0) / n : 0;
+  const stdDeviation = Math.round(Math.sqrt(variance) * 10) / 10;
+  const range = n > 0 ? Math.max(...questionScores) - Math.min(...questionScores) : 0;
+
+  let streakInc = 0, maxStreakInc = 0;
+  let streakDec = 0, maxStreakDec = 0;
+  let recoveryDetected = false;
+  let hadDrop = false;
+
+  for (let i = 1; i < n; i++) {
+    const diff = questionScores[i] - questionScores[i - 1];
+    if (diff > 0) {
+      streakInc++;
+      streakDec = 0;
+      if (hadDrop && diff >= 10) {
+        recoveryDetected = true;
+      }
+    } else if (diff < 0) {
+      streakDec++;
+      streakInc = 0;
+      if (diff <= -10) {
+        hadDrop = true;
+      }
+    } else {
+      streakInc = 0;
+      streakDec = 0;
+    }
+    if (streakInc > maxStreakInc) maxStreakInc = streakInc;
+    if (streakDec > maxStreakDec) maxStreakDec = streakDec;
+  }
+
+  const instabilityPenalty = Math.min(45, Math.round((stdDeviation * 1.4) + (maxStreakDec * 3.5) + (drops.length * 4)));
+  const consistencyScore = Math.max(0, Math.min(100, 100 - instabilityPenalty));
+
+  let performanceTrend = 'stable';
+  if (n < 3) {
+    performanceTrend = 'insufficient_data';
+  } else if (maxStreakInc >= 3) {
+    performanceTrend = 'improving';
+  } else if (maxStreakDec >= 3) {
+    performanceTrend = 'declining';
+  } else if (stdDeviation > 16) {
+    performanceTrend = 'fluctuating';
+  } else if (stdDeviation <= 8) {
+    performanceTrend = 'stable';
+  }
+
+  const mcqs = allQuestionItems.filter(q => q.type === 'mcq');
+  const voices = allQuestionItems.filter(q => q.type === 'voice');
+  const texts = allQuestionItems.filter(q => q.type === 'text');
+
+  const sectionScores = {
+    mcq: {
+      score: mcqs.length > 0 ? Math.round(mcqs.filter(m => m.item.evaluation?.isCorrect).length / mcqs.length * 100) : null,
+      count: mcqs.length,
+      correctCount: mcqs.filter(m => m.item.evaluation?.isCorrect).length
+    },
+    voice: {
+      score: voices.length > 0 ? Math.round(voices.reduce((acc, v) => acc + (v.item.evaluation?.technicalAccuracy?.score || 5) * 10, 0) / voices.length) : null,
+      count: voices.length
+    },
+    text: {
+      score: texts.length > 0 ? Math.round(texts.reduce((acc, t) => acc + (t.item.evaluation?.technicalAccuracy?.score || 5) * 10, 0) / texts.length) : null,
+      count: texts.length
+    },
+    technical: { score: technicalScore, trend: performanceTrend },
+    communication: { score: communicationScore, trend: performanceTrend },
+    reasoning: { score: reasoningScore, trend: performanceTrend },
+    behavioural: { score: behaviouralScore, trend: performanceTrend }
+  };
+
+  const improvementRecommendations = [];
+
+  if (communicationScore !== null && communicationScore < 75) {
+    improvementRecommendations.push({
+      id: 'rec_comm_structure',
+      title: 'Structure Technical Responses Using STAR Framework',
+      category: 'Communication',
+      priority: communicationScore < 60 ? 'Critical' : 'High',
+      severity: communicationScore < 60 ? 'High' : 'Medium',
+      problem: `Communication score was ${communicationScore}/100 with lower clarity observed in complex scenario questions.`,
+      evidence: performanceTimeline.filter(p => p.communicationScore !== null && p.communicationScore < 70).map(p => ({
+        questionId: p.questionId,
+        topic: p.topic,
+        score: p.communicationScore,
+        signal: 'Low communication clarity'
+      })),
+      whyItMatters: 'Clear architectural communication is a primary signal of engineering seniority during recruiter evaluations.',
+      action: 'Practice 5 technical scenario questions stating the core bottom line first before detailing trade-offs.',
+      practiceMethod: 'Structured voice practice focusing on deliberate pauses and STAR format.',
+      expectedOutcome: 'Achieve communication clarity score of 80+ across technical questions.',
+      measurableTarget: '5 structured practice sessions',
+      estimatedEffort: '25 minutes',
+      relatedQuestionIds: performanceTimeline.filter(p => p.communicationScore !== null && p.communicationScore < 70).map(p => p.questionId)
+    });
+  }
+
+  if (technicalScore !== null && technicalScore < 80) {
+    improvementRecommendations.push({
+      id: 'rec_tech_depth',
+      title: 'Deepen Architectural Trade-Offs & Edge Case Explanations',
+      category: 'Technical',
+      priority: technicalScore < 65 ? 'Critical' : 'High',
+      severity: technicalScore < 65 ? 'High' : 'Medium',
+      problem: `Technical proficiency score of ${technicalScore}/100 indicates missing depth in scenario edge cases.`,
+      evidence: performanceTimeline.filter(p => p.technicalScore < 70).map(p => ({
+        questionId: p.questionId,
+        topic: p.topic,
+        score: p.technicalScore,
+        signal: 'Limited trade-off depth'
+      })),
+      whyItMatters: 'Hiring managers test whether candidates understand production failure modes and trade-offs.',
+      action: 'Complete 5 practice questions focusing on database consistency, caching strategies, and concurrency failure modes.',
+      practiceMethod: 'Targeted code & system design scenario practice.',
+      expectedOutcome: 'Raise technical depth rating above 85/100.',
+      measurableTarget: '5 practice questions completed',
+      estimatedEffort: '35 minutes',
+      relatedQuestionIds: performanceTimeline.filter(p => p.technicalScore < 70).map(p => p.questionId)
+    });
+  }
+
+  if (drops.length > 0) {
+    improvementRecommendations.push({
+      id: 'rec_consistency_recovery',
+      title: 'Maintain Performance Consistency Under Sequential Time Pressure',
+      category: 'Structure',
+      priority: drops.length >= 2 ? 'High' : 'Medium',
+      severity: 'Medium',
+      problem: `Detected ${drops.length} significant score drops during the interview sequence.`,
+      evidence: drops.map(d => ({
+        questionId: d.questionId,
+        topic: d.topic,
+        score: d.score,
+        signal: `Dropped by ${Math.abs(d.delta)} points`
+      })),
+      whyItMatters: 'Consistent performance demonstrates composure and steady technical reasoning.',
+      action: 'Complete full mock interview simulations with timed response windows to build stamina.',
+      practiceMethod: 'Timed voice & text mock interview sessions.',
+      expectedOutcome: 'Reduce performance variance below 8.0 std deviation.',
+      measurableTarget: '2 full mock interview attempts',
+      estimatedEffort: '45 minutes',
+      relatedQuestionIds: drops.map(d => d.questionId)
+    });
+  }
+
+  const hrAnalytics = {
+    overallScore,
+    consistencyScore,
+    performanceTrend,
+    stabilityLabel: consistencyScore >= 80 ? 'High Stability' : consistencyScore >= 60 ? 'Moderate Stability' : 'Fluctuating Performance',
+    sectionScores: {
+      technical: technicalScore,
+      communication: communicationScore,
+      reasoning: reasoningScore,
+      behavioural: behaviouralScore,
+      mcqAccuracy: sectionScores.mcq.score
+    },
+    topStrengths: performanceTimeline.flatMap(p => p.strengths).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4),
+    topWeaknesses: performanceTimeline.flatMap(p => p.weaknesses).filter((v, i, a) => a.indexOf(v) === i).slice(0, 4),
+    significantDropCount: drops.length,
+    recoveryDetected,
+    evidenceSummary: `Candidate completed ${n} question scenarios with an overall score of ${overallScore} and a consistency score of ${consistencyScore}.`,
+    evaluatedAt: new Date()
+  };
+
+  return {
+    performanceTimeline,
+    consistencyAnalytics: {
+      meanScore,
+      scoreVariance: Math.round(variance * 10) / 10,
+      stdDeviation,
+      range,
+      consecutiveImprovement: maxStreakInc,
+      consecutiveDecline: maxStreakDec,
+      recoveryDetected,
+      consistencyScore,
+      performanceTrend,
+      significantDropsCount: drops.length
+    },
+    sectionScores,
+    performanceDrops: drops,
+    improvementRecommendations,
+    hrAnalytics
+  };
+}
+
   const allStrengths = [];
   const allImprovements = [];
   [...voiceResults, ...textResults].forEach((r) => {
@@ -594,6 +937,15 @@ async function evaluateMockInterview(interviewDoc, force = false, progressCallba
 
   const uniqueStrengths = Array.from(new Set(allStrengths)).slice(0, 4);
   const uniqueImprovements = Array.from(new Set(allImprovements)).slice(0, 4);
+
+  const comprehensiveAnalytics = computeComprehensiveInterviewAnalytics(
+    allQuestionItems,
+    overallScore,
+    technicalScore,
+    communicationScore,
+    reasoningScore,
+    behaviouralScore
+  );
 
   const overallEvaluation = {
     status: 'completed',
@@ -606,11 +958,18 @@ async function evaluateMockInterview(interviewDoc, force = false, progressCallba
     communicationScore,
     reasoningScore,
     behaviouralScore,
+    consistencyScore: comprehensiveAnalytics.consistencyAnalytics.consistencyScore,
+    performanceTimeline: comprehensiveAnalytics.performanceTimeline,
+    consistencyAnalytics: comprehensiveAnalytics.consistencyAnalytics,
+    sectionScores: comprehensiveAnalytics.sectionScores,
+    performanceDrops: comprehensiveAnalytics.performanceDrops,
+    improvementRecommendations: comprehensiveAnalytics.improvementRecommendations,
+    hrAnalytics: comprehensiveAnalytics.hrAnalytics,
     sentimentSummary: 'Evidence-based analysis of candidate responses.',
     strengths: uniqueStrengths,
     improvements: uniqueImprovements,
     finalFeedback: overallScore !== null
-      ? `Candidate scored ${overallScore}/100 based on demonstrated technical evidence across ${completedCount} evaluated question scenarios.`
+      ? `Candidate scored ${overallScore}/100 based on demonstrated technical evidence across ${completedCount} evaluated question scenarios with a consistency score of ${comprehensiveAnalytics.consistencyAnalytics.consistencyScore}/100.`
       : `Evaluation completed based on available response evidence.`,
     evaluatedAt: new Date(),
     startedAt: interviewDoc.evaluation?.startedAt || interviewDoc.createdAt,
@@ -659,3 +1018,4 @@ module.exports = {
   normalizeFeedbackWordCount,
   generateIrrelevantFeedback
 };
+
