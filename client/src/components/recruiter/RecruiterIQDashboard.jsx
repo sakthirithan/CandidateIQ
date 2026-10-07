@@ -165,9 +165,9 @@ function RecruiterIQDashboard({ onSelectCandidate, onNavigate }) {
           <button
             type="button"
             onClick={() => onNavigate && onNavigate('jobs-recruiter')}
-            className="btn-primary px-4 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white shadow-md cursor-pointer"
+            className="btn-primary px-4 py-2.5 text-xs font-bold rounded-xl flex items-center gap-2 cursor-pointer shadow-md"
           >
-            <Plus className="w-4 h-4" /> Create New Job
+            <Plus className="w-4 h-4 text-white" /> Create New Job
           </button>
         </div>
       </div>

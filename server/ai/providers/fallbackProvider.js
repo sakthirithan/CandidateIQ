@@ -477,19 +477,106 @@ class FallbackProvider {
     };
   }
 
-  fallbackUnified(evals) {
+  fallbackEvidenceReasoning({ rawText = '', structuredResume = null, targetContext = {} }) {
+    const lines = (rawText || '').split('\n').map(l => l.trim()).filter(Boolean);
+    const textLower = (rawText || '').toLowerCase();
+    const targetRole = targetContext?.role || 'Software Engineer';
+    const jdText = targetContext?.jobDescription || '';
+
+    // Extract dynamic skills present in text
+    const words = rawText.match(/\b[A-Za-z0-9#+.]{2,20}\b/g) || [];
+    const uniqueTokens = Array.from(new Set(words));
+    const detectedSkills = uniqueTokens.filter(t => 
+      ['react', 'node', 'express', 'python', 'java', 'sql', 'mongodb', 'docker', 'aws', 'typescript', 'javascript', 'html', 'css', 'git'].includes(t.toLowerCase())
+    );
+
+    // Extract quantified metrics dynamically
+    const metricBullets = lines.filter(l => /\b(\d+%\s*|\$\d+|\d+\+?\s*(users|clients|requests|ms|million|engineers|x\b))\b/i.test(l));
+
+    // Dynamic claims
+    const claims = [];
+    if (detectedSkills.length > 0) {
+      claims.push({
+        id: 'claim_1',
+        claim: `Demonstrated technical competency across ${detectedSkills.slice(0, 4).join(', ')}`,
+        evidenceLevel: 'direct',
+        confidence: 0.95,
+        supportingEvidence: [
+          { sourceId: 'src_skills', type: 'skill', text: detectedSkills.slice(0, 4).join(', '), page: 1 }
+        ],
+        reasoning: 'Skills are explicitly documented in candidate competencies and project summaries.',
+        verificationGap: null
+      });
+    }
+
+    if (metricBullets.length > 0) {
+      claims.push({
+        id: 'claim_2',
+        claim: 'Quantified engineering impact and scale delivered',
+        evidenceLevel: 'direct',
+        confidence: 0.92,
+        supportingEvidence: [
+          { sourceId: 'src_metrics', type: 'experience', text: metricBullets[0].slice(0, 100), page: 1 }
+        ],
+        reasoning: 'Experience bullets substantiate engineering scale and quantifiable outcomes.',
+        verificationGap: null
+      });
+    } else {
+      claims.push({
+        id: 'claim_2',
+        claim: 'Engineering impact with qualitative project ownership',
+        evidenceLevel: 'contextual',
+        confidence: 0.78,
+        supportingEvidence: [
+          { sourceId: 'src_desc', type: 'project', text: lines.slice(0, 2).join(' '), page: 1 }
+        ],
+        reasoning: 'Technical responsibilities described; recommend adding explicit numerical metrics.',
+        verificationGap: 'Quantified percentage gains or scale metrics are not explicitly stated.'
+      });
+    }
+
+    // Dynamic Job Match
+    const jobMatch = [];
+    if (jdText && jdText.trim().length > 10) {
+      jobMatch.push({
+        requirement: `Core Technical Alignment with ${targetRole}`,
+        matchType: 'DIRECT MATCH',
+        confidence: 0.88,
+        candidateEvidence: detectedSkills.slice(0, 3).join(', ') || 'Relevant software development background',
+        reasoning: 'Demonstrated competencies strongly align with fundamental role responsibilities.',
+        recommendation: 'Highlight specific architectural impact during interview stages.'
+      });
+    }
+
     return {
-      technical: { score: 84 },
-      problemSolving: { score: 82 },
-      communication: { score: 86 },
-      englishLanguage: { score: 85 },
-      mcq: { score: 88 },
-      voice: { score: 84 },
-      strengths: ["Strong technical domain fundamentals", "Clear articulate communication", "Structured problem solving"],
-      improvements: ["Expand on large-scale distributed cloud infrastructure experience"],
-      detailedExplanation: "Unified evaluation indicates a high technical and behavioural competency match."
+      claims,
+      jobMatch,
+      impactSignals: metricBullets.slice(0, 3).map((b, idx) => ({
+        action: 'Engineered',
+        metric: b.match(/\d+%/)?.[0] || 'Measurable scale',
+        outcome: 'System optimization',
+        technicalContext: 'Application Engineering',
+        evidenceLevel: 'direct'
+      })),
+      technicalKeywords: detectedSkills.length > 0 ? detectedSkills : ['Full-Stack Development', 'Software Engineering', 'System Design'],
+      softSkills: ['Problem Solving', 'Collaboration', 'Analytical Thinking'],
+      strengths: [
+        'Clear structured document format with readily indexable section headings.',
+        'Technical competency validated across core application development tools.'
+      ],
+      weaknesses: metricBullets.length === 0 ? ['Several bullet points lack quantifiable numbers or outcome percentages.'] : [],
+      criticalFixes: metricBullets.length === 0 ? ['Add measurable metrics (e.g. "Reduced load time by 30%") to highlight engineering scale.'] : [],
+      categoryTips: {
+        ATS: [{ type: 'good', tip: 'Standard heading conventions detected', explanation: 'Ensures error-free ATS document indexing' }],
+        toneAndStyle: [{ type: 'good', tip: 'Action-oriented professional phrasing', explanation: 'Demonstrates direct engineering ownership' }],
+        content: [{ type: metricBullets.length > 0 ? 'good' : 'improve', tip: metricBullets.length > 0 ? 'Quantified metrics detected' : 'Add numerical impact figures', explanation: 'Substantiates engineering scale' }],
+        structure: [{ type: 'good', tip: 'Logical section progression', explanation: 'Facilitates fast recruiter scanning' }],
+        skills: [{ type: 'good', tip: 'Direct competencies highlighted', explanation: 'Improves ATS skill match ranking' }]
+      },
+      explanation: `Resume demonstrates evidence-based alignment with ${targetRole}. Technical competencies and structural clarity are validated.`
     };
   }
 }
 
 module.exports = new FallbackProvider();
+

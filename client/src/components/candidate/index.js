@@ -3,6 +3,13 @@ export { default as ApplicationTracker } from './ApplicationTracker';
 export { default as CandidateDashboard } from './CandidateDashboard';
 export { default as CandidateIQDashboard } from './CandidateIQDashboard';
 export { default as CandidateIQProfile } from './CandidateIQProfile';
+export { default as DynamicProfileRenderer } from './DynamicProfileRenderer';
+export { default as ProfileDraftEditor } from './ProfileDraftEditor';
+export { default as ManualProfileBuilder } from './ManualProfileBuilder';
+export { default as ProfileReplacementModal } from './ProfileReplacementModal';
+export { default as ResumeHistory } from './ResumeHistory';
+export { default as ResumeDetailWorkspace } from './ResumeDetailWorkspace';
+export { default as ATSScoreGauge } from './ATSScoreGauge';
 export { default as InterviewEvaluationAnalytics } from './InterviewEvaluationAnalytics';
 export { default as InterviewResults } from './InterviewResults';
 

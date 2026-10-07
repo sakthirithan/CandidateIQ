@@ -5,7 +5,7 @@ import {
   Sidebar, Topbar, NotificationCenter, SettingsPage, SettingsModal, ErrorBoundary, GlobalSearchPalette
 } from './components/common';
 import {
-  CandidateIQDashboard, CandidateIQProfile, ResumeIntelligence, SkillIntelligence,
+  CandidateIQDashboard, CandidateIQProfile, ResumeIntelligence, ResumeHistory, SkillIntelligence,
   JobDiscovery, JobDetailsView, JobTrackerView, AIMockInterviewRoom, InterviewResults, InterviewEvaluationAnalytics, SkillGapIntelligence, ApplicationTracker, ProfileEvidenceIntelligence, InterviewJourney, ProfileReviewHub, InterviewComparisonPage, CandidateHRInterviews, JobInterviewRoom
 } from './components/candidate';
 
@@ -230,6 +230,9 @@ function App() {
             {/* Candidate Routes */}
             <Route path="/dashboard" element={<CandidateIQDashboard onNavigate={navigateTab} />} />
             <Route path="/profile" element={<CandidateIQProfile />} />
+            <Route path="/resume-history" element={<ResumeHistory />} />
+            <Route path="/resumes" element={<ResumeHistory />} />
+            <Route path="/resume-intelligence" element={<ResumeIntelligence />} />
             <Route path="/skills" element={<SkillIntelligence />} />
             <Route
               path="/jobs"

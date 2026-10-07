@@ -35,3 +35,7 @@ Thumbs.db
 # Cache & Temp
 .cache/
 tmp/
+
+# Excluded Folders
+resumind/
+

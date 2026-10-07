@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 
 function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange }) {
+  const [isCollapsed, setIsCollapsed] = React.useState(false);
   const currentUser = getCurrentUser() || { name: 'User', role: userRole || 'candidate' };
   const initials = currentUser.name ? currentUser.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'U';
 
@@ -43,29 +44,36 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
   const getNavButtonClass = (tabName, isAi = false) => {
     const isActive = activeTab === tabName;
     if (isActive) {
-      return isAi 
-        ? "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md shadow-indigo-500/20 transition-all"
-        : "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-slate-900 text-white shadow-sm transition-all";
+      return `w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between px-3.5'} py-2.5 rounded-xl text-xs font-semibold bg-gradient-to-b from-[#8e98ff] to-[#606beb] text-white shadow-md shadow-[#606beb]/30 transition-all`;
     }
-    return "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all";
+    return `w-full flex items-center ${isCollapsed ? 'justify-center px-2' : 'justify-between px-3.5'} py-2.5 rounded-xl text-xs font-medium text-slate-600 hover:bg-slate-100/80 hover:text-slate-900 transition-all`;
   };
 
   return (
-    <aside className="w-64 bg-white border-r border-slate-200/80 flex flex-col justify-between min-h-screen sticky top-0 h-screen z-40 select-none shadow-sm">
-      {/* Top Header Logo */}
+    <aside className={`${isCollapsed ? 'w-20' : 'w-64'} bg-white border-r border-[#e4e7ec] flex flex-col justify-between min-h-screen sticky top-0 h-screen z-40 select-none shadow-xs transition-all duration-300 font-sans`}>
+      {/* Top Header Logo & Collapse Toggle */}
       <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-        <div className="flex items-center gap-3 cursor-pointer group" onClick={() => setActiveTab('landing')}>
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-slate-950 via-slate-900 to-indigo-950 flex items-center justify-center text-white font-black font-outfit shadow-md shadow-slate-900/15 group-hover:scale-105 transition-transform">
-            <Sparkles className="w-5 h-5 text-indigo-400" />
+        <div className="flex items-center gap-3 cursor-pointer group overflow-hidden" onClick={() => setActiveTab('landing')}>
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-b from-[#8e98ff] to-[#606beb] flex items-center justify-center text-white font-black font-outfit shadow-md shadow-[#606beb]/20 group-hover:scale-105 transition-transform flex-shrink-0">
+            <Sparkles className="w-5 h-5 text-white" />
           </div>
-          <div>
-            <div className="flex items-center gap-1">
-              <span className="font-extrabold text-lg font-outfit text-slate-900 tracking-tight">Candidate</span>
-              <span className="font-black text-lg font-outfit text-indigo-600">IQ</span>
+          {!isCollapsed && (
+            <div>
+              <div className="flex items-center gap-1">
+                <span className="font-extrabold text-lg font-outfit text-slate-900 tracking-tight">Candidate</span>
+                <span className="font-black text-lg font-outfit text-[#606beb]">IQ</span>
+              </div>
+              <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase block -mt-1">AI Intelligence SaaS</span>
             </div>
-            <span className="text-[10px] text-slate-400 font-bold tracking-wider uppercase block -mt-1">AI Intelligence SaaS</span>
-          </div>
+          )}
         </div>
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="p-1 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition-colors"
+          title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+        >
+          {isCollapsed ? '→' : '←'}
+        </button>
       </div>
 
       {/* Role Switcher Selector / Locked Role Badge */}

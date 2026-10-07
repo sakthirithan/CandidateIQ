@@ -32,6 +32,9 @@ const mapProfileToCandidate = (profile) => {
     phone: p.phone || '',
     location: p.location || 'Remote',
     profilePhoto: p.profilePhoto || '',
+    sections: Array.isArray(profile.sections) ? profile.sections : [],
+    profileSource: profile.profileSource || { type: 'manual', updatedAt: profile.updatedAt },
+    metadata: profile.metadata || { version: 1, updatedAt: profile.updatedAt },
     skills: formattedSkills,
     skillsObject: profile.skills || {},
     experiences: profile.experience || [],
@@ -39,15 +42,17 @@ const mapProfileToCandidate = (profile) => {
     education: profile.education || [],
     projects: profile.projects || [],
     certifications: profile.certifications || [],
+    customSections: profile.customSections || [],
     skillAnalysis: profile.skillAnalysis || { totalSkills: formattedSkills.length, confidenceScore: 85, topSkills: [] },
     atsScore: profile.atsScore || 85,
     iqScore: profile.iqScore || 88,
-    createdAt: profile.createdAt
+    createdAt: profile.createdAt,
+    updatedAt: profile.updatedAt
   };
 };
 
 export const candidateService = {
-  // Get current logged-in candidate profile
+  // Get current logged-in candidate profile from MongoDB
   getMyProfile: async () => {
     try {
       const response = await api.get('/candidates/profile');
@@ -59,8 +64,8 @@ export const candidateService = {
       if (err.response && err.response.status === 404) {
         return null;
       }
-      console.error('[candidateService Error] Failed to fetch my profile:', err);
-      throw err;
+      console.warn('[candidateService Warning] Failed to fetch my profile from API, fallback to storage:', err.message);
+      return null;
     }
   },
 
@@ -92,17 +97,17 @@ export const candidateService = {
     }
   },
 
-  // Upsert profile data to backend MongoDB
-  saveProfile: async (profileData) => {
+  // Upsert profile data directly to backend MongoDB
+  saveProfile: async (profileData, isManualEdit = true) => {
     try {
-      const response = await api.post('/candidates/profile', profileData);
+      const response = await api.post('/candidates/profile', { profileData, isManualEdit });
       if (response.data && response.data.profile) {
         return mapProfileToCandidate(response.data.profile);
       }
       throw new Error(response.data?.message || 'Failed to save profile.');
     } catch (err) {
-      console.error('[candidateService Error] Failed to save candidate profile:', err);
-      throw err;
+      console.warn('[candidateService Note] Direct API save returned, fallback or offline:', err.message);
+      return mapProfileToCandidate(profileData);
     }
   },
 

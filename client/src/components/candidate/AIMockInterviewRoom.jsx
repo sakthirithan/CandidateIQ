@@ -21,6 +21,7 @@ import {
   storageResumes
 } from '../../services/storage/storageService';
 import CustomQuestionBankUploadModal from './CustomQuestionBankUploadModal';
+import { MCQAssessmentStart, MCQAssessmentRoom } from '../interview';
 import {
   Play, Send, Mic, Clock, Sparkles, MessageSquare, CheckCircle2, AlertCircle,
   Video, MicOff, Bot, Pause, RotateCcw, Briefcase, Calendar, Upload, FileSpreadsheet,
@@ -1333,7 +1334,20 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
       )}
 
       {/* STEP 3: ASSESSMENT PREVIEW & GUIDELINES CONFIRMATION SCREEN */}
-      {flowStep === 'guidelines' && (
+      {flowStep === 'guidelines' && selectedMethod === 'MCQ' && (
+        <MCQAssessmentStart
+          assessmentTitle={creationSource === 'RECRUITER_JOB' ? (selectedJob?.title || 'Job Assessment') : customTitle}
+          targetJob={creationSource === 'RECRUITER_JOB' ? (selectedJob?.company || 'Target Job') : 'Technical Role'}
+          questionCount={METHOD_CONFIG[selectedMethod]?.totalCount || (generatedQuestions?.length || 20)}
+          durationMinutes={METHOD_CONFIG[selectedMethod]?.estimatedDuration || 20}
+          difficulty={selectedDifficulty}
+          skills={aiFeatures?.extractedSkills || ['React', 'JavaScript', 'Node.js']}
+          attemptNumber={mockAttemptsList.length + 1}
+          onStartAssessment={handleLaunchMockInterview}
+        />
+      )}
+
+      {flowStep === 'guidelines' && selectedMethod !== 'MCQ' && (
         <div className="saas-card p-8 border border-slate-200/90 space-y-6 bg-white shadow-sm max-w-2xl mx-auto rounded-2xl my-6">
           <div className="border-b border-slate-100 pb-4 space-y-1">
             <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block">Assessment Preview</span>
@@ -1447,7 +1461,41 @@ function AIMockInterviewRoom({ onComplete, targetSkill, initialJobData = null })
       )}
 
       {/* STEP 4: DISTRACTION-FREE FULL-SCREEN TEST INTERFACE */}
-      {flowStep === 'testing' && currentAttempt && (
+      {flowStep === 'testing' && currentAttempt && (currentAttempt.method === 'MCQ' || currentAttempt.questions?.every(q => (q.questionType || q.type) === 'MCQ')) && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-[#F5F7FC]">
+          <MCQAssessmentRoom
+            assessmentTitle={`AI Mock Assessment — ${currentAttempt.jobTitle || 'Technical Test'}`}
+            questions={currentAttempt.questions || []}
+            initialAnswers={submittedAnswers}
+            durationMinutes={currentAttempt.timerMinutes || 20}
+            onSaveAnswer={async (qId, selectedOption, optionText, updatedAnswers) => {
+              setSubmittedAnswers(updatedAnswers);
+              const answersArray = Object.values(updatedAnswers);
+              updateMockInterviewAttempt(currentAttempt.attemptId, { answers: answersArray });
+
+              const attemptId = currentAttempt.attemptId || currentAttempt._id || currentAttempt.id;
+              if (attemptId && attemptId.length === 24) {
+                try {
+                  await api.patch(`/mock-interviews/${attemptId}/questions/${qId}/answer`, {
+                    selectedOption,
+                    answer: selectedOption
+                  });
+                } catch (err) {
+                  console.warn('Backend API patch answer notice:', err);
+                }
+              }
+            }}
+            onCompleteAssessment={async (finalAnswers) => {
+              setSubmittedAnswers(finalAnswers);
+              await finalizeAttemptCompletion();
+            }}
+            onCloseAssessment={handleTriggerFinishNow}
+            submitting={submitting}
+          />
+        </div>
+      )}
+
+      {flowStep === 'testing' && currentAttempt && !(currentAttempt.method === 'MCQ' || currentAttempt.questions?.every(q => (q.questionType || q.type) === 'MCQ')) && (
         <div
           onCopy={blockPrevent}
           onPaste={blockPrevent}

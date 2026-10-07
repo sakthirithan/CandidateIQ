@@ -26,14 +26,14 @@ function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCo
   };
 
   return (
-    <header className="h-16 bg-white/90 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-30 px-6 md:px-8 flex items-center justify-between shadow-2xs">
+    <header className="h-16 bg-white/95 backdrop-blur-md border-b border-[#e4e7ec] sticky top-0 z-30 px-6 md:px-8 flex items-center justify-between shadow-2xs font-sans">
       {/* Page Title & Breadcrumb */}
       <div>
-        <h1 className="text-base md:text-lg font-bold font-outfit text-slate-900 tracking-tight">{getPageTitle()}</h1>
-        <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+        <h1 className="text-base md:text-lg font-bold font-outfit text-[#101828] tracking-tight">{getPageTitle()}</h1>
+        <div className="flex items-center gap-2 text-xs text-[#475467] font-medium">
           <span>CandidateIQ</span>
           <span className="text-slate-300">/</span>
-          <span className="text-slate-600 font-semibold capitalize">{activeTab.replace('-', ' ')}</span>
+          <span className="text-[#606beb] font-semibold capitalize">{activeTab.replace('-', ' ')}</span>
         </div>
       </div>
 
@@ -44,38 +44,38 @@ function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCo
           onClick={onOpenSearch}
           className="relative w-56 md:w-72 hidden sm:block cursor-pointer group"
         >
-          <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 absolute left-3 top-2.5 transition-colors" />
+          <Search className="w-3.5 h-3.5 text-slate-400 group-hover:text-[#606beb] absolute left-3 top-2.5 transition-colors" />
           <input
             type="text"
             readOnly
             onClick={onOpenSearch}
             placeholder="Search candidates, skills, jobs... (Cmd+K)"
-            className="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-12 py-1.5 text-xs text-slate-700 placeholder-slate-400 cursor-pointer focus:outline-none group-hover:border-indigo-300 transition-all shadow-2xs"
+            className="w-full bg-slate-50 border border-[#e4e7ec] rounded-xl pl-9 pr-12 py-1.5 text-xs text-[#101828] placeholder-[#667085] cursor-pointer focus:outline-none group-hover:border-[#606beb]/50 transition-all shadow-2xs"
           />
-          <div className="absolute right-2.5 top-2 flex items-center gap-0.5 text-[10px] text-slate-400 font-semibold bg-white border border-slate-200 rounded px-1.5 py-0.5 shadow-2xs">
+          <div className="absolute right-2.5 top-2 flex items-center gap-0.5 text-[10px] text-slate-400 font-semibold bg-white border border-[#e4e7ec] rounded px-1.5 py-0.5 shadow-2xs">
             <Command className="w-2.5 h-2.5" /> K
           </div>
         </div>
 
         {/* AI Engine Status Badge */}
-        <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50/80 border border-indigo-100 text-indigo-700 text-xs font-semibold shadow-2xs">
+        <div className="hidden lg:flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#f0f2ff] border border-[#d0d5ff] text-[#4957eb] text-xs font-semibold shadow-2xs">
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-600"></span>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#8e98ff] opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-[#606beb]"></span>
           </span>
-          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+          <Sparkles className="w-3.5 h-3.5 text-[#606beb]" />
           <span className="text-[11px]">Gemini 2.0 AI Active</span>
         </div>
 
         {/* Notification Bell Drawer Trigger */}
         <button
           onClick={onOpenNotifications}
-          className="relative p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100/80 transition-all focus:outline-none"
+          className="relative p-2 rounded-xl text-[#475467] hover:text-[#101828] hover:bg-slate-100/80 transition-all focus:outline-none"
           title="Notifications"
         >
           <Bell className="w-4 h-4" />
           {unreadCount > 0 && (
-            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-indigo-600 ring-2 ring-white animate-pulse"></span>
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-[#606beb] ring-2 ring-white animate-pulse"></span>
           )}
         </button>
 

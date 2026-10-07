@@ -64,10 +64,79 @@ const ResumeKeywordExtractionSchema = z.object({
   keywords: z.array(z.string()).default([])
 });
 
+const EvidenceSourceCitationSchema = z.object({
+  sourceId: z.string().default('source_0'),
+  type: z.enum([
+    'resume_text', 'summary', 'skill', 'experience', 'project',
+    'education', 'certification', 'achievement', 'job_description'
+  ]).default('resume_text'),
+  text: z.string().default(''),
+  section: z.string().optional().nullable(),
+  page: z.number().default(1)
+});
+
+const EvidenceClaimSchema = z.object({
+  id: z.string().default('claim_0'),
+  claim: z.string(),
+  evidenceLevel: z.enum(['direct', 'contextual', 'derived', 'unsupported']),
+  confidence: z.number().min(0).max(1).default(0.85),
+  supportingEvidence: z.array(EvidenceSourceCitationSchema).default([]),
+  reasoning: z.string().default(''),
+  verificationGap: z.string().optional().nullable()
+});
+
+const JobRequirementMatchSchema = z.object({
+  requirement: z.string(),
+  matchType: z.enum([
+    'DIRECT MATCH',
+    'CONTEXTUAL MATCH',
+    'TRANSFERABLE / RELATED',
+    'INSUFFICIENT EVIDENCE',
+    'MISSING'
+  ]),
+  confidence: z.number().min(0).max(1).default(0.8),
+  candidateEvidence: z.string().default(''),
+  reasoning: z.string().default(''),
+  recommendation: z.string().optional().nullable()
+});
+
+const ImpactSignalSchema = z.object({
+  action: z.string().default(''),
+  metric: z.string().default(''),
+  outcome: z.string().default(''),
+  technicalContext: z.string().default(''),
+  evidenceLevel: z.enum(['direct', 'contextual', 'derived', 'unsupported']).default('direct')
+});
+
+const EvidenceReasoningOutputSchema = z.object({
+  claims: z.array(EvidenceClaimSchema).default([]),
+  jobMatch: z.array(JobRequirementMatchSchema).default([]),
+  impactSignals: z.array(ImpactSignalSchema).default([]),
+  technicalKeywords: z.array(z.string()).default([]),
+  softSkills: z.array(z.string()).default([]),
+  strengths: z.array(z.string()).default([]),
+  weaknesses: z.array(z.string()).default([]),
+  criticalFixes: z.array(z.string()).default([]),
+  categoryTips: z.object({
+    ATS: z.array(z.object({ type: z.string(), tip: z.string(), explanation: z.string().optional() })).default([]),
+    toneAndStyle: z.array(z.object({ type: z.string(), tip: z.string(), explanation: z.string().optional() })).default([]),
+    content: z.array(z.object({ type: z.string(), tip: z.string(), explanation: z.string().optional() })).default([]),
+    structure: z.array(z.object({ type: z.string(), tip: z.string(), explanation: z.string().optional() })).default([]),
+    skills: z.array(z.object({ type: z.string(), tip: z.string(), explanation: z.string().optional() })).default([])
+  }).default({ ATS: [], toneAndStyle: [], content: [], structure: [], skills: [] }),
+  explanation: z.string().default('')
+});
+
 module.exports = {
   ResumeSectionItemSchema,
   DynamicResumeSectionSchema,
   FullResumeExtractionSchema,
-  ResumeKeywordExtractionSchema
+  ResumeKeywordExtractionSchema,
+  EvidenceSourceCitationSchema,
+  EvidenceClaimSchema,
+  JobRequirementMatchSchema,
+  ImpactSignalSchema,
+  EvidenceReasoningOutputSchema
 };
+
 

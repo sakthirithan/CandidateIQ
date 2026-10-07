@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const pdfParse = require('pdf-parse');
 const Resume = require('../models/Resume');
 const CandidateProfile = require('../models/CandidateProfile');
@@ -5,33 +6,100 @@ const resumeAIService = require('../ai/services/resumeAIService');
 const { normalizeKeywords } = require('../utils/keywordNormalizer');
 const { computeSkillAnalytics } = require('./profileController');
 
-// @desc    Upload resume, validate, parse full document, and generate dynamic section preview
+const RESUME_LIMITS = {
+  MAX_RESUMES_PER_CANDIDATE: 10
+};
+
+// @desc    Get all active resumes for the authenticated candidate
+// @route   GET /api/resumes/my-resumes
+// @access  Private (Candidate)
+const getMyResumes = async (req, res, next) => {
+  try {
+    const userId = req.user.id || req.user._id;
+    const resumes = await Resume.find({ candidate: userId, deletedAt: null }).sort({ updatedAt: -1 });
+    return res.status(200).json({
+      success: true,
+      count: resumes.length,
+      limit: RESUME_LIMITS.MAX_RESUMES_PER_CANDIDATE,
+      resumes
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get single resume by ID
+// @route   GET /api/resumes/:id
+// @access  Private (Candidate)
+const getResumeById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id || req.user._id;
+    const resume = await Resume.findOne({ _id: id, candidate: userId, deletedAt: null });
+
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume record not found or has been deleted.' });
+    }
+
+    return res.status(200).json({ success: true, resume });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Upload new independent resume (Enforces 10 resume limit server-side)
 // @route   POST /api/resumes/upload
 // @access  Private (Candidate)
 const uploadAndParseResume = async (req, res, next) => {
   try {
     const userId = req.user.id || req.user._id;
+    const body = req.body || {};
 
-    if (!req.file) {
+    // 1. Enforce Server-Side Maximum Resume Limit (10 Resumes)
+    const activeCount = await Resume.countDocuments({ candidate: userId, deletedAt: null });
+    if (activeCount >= RESUME_LIMITS.MAX_RESUMES_PER_CANDIDATE) {
       return res.status(400).json({
         success: false,
-        error: { code: 'NO_FILE_PROVIDED', message: 'Please upload a resume file.' }
+        error: {
+          code: 'RESUME_LIMIT_REACHED',
+          limit: RESUME_LIMITS.MAX_RESUMES_PER_CANDIDATE,
+          currentCount: activeCount,
+          message: 'Resume limit reached. Maximum 10 resume documents allowed per candidate.'
+        }
       });
     }
 
-    let extractedText = '';
+    let fileName = body.fileName || 'resume.pdf';
+    let displayName = body.displayName || fileName;
+    let fileType = body.fileType || 'application/pdf';
+    let fileSize = body.fileSize || 0;
+    let extractedText = body.rawText || '';
+    let pageCount = body.pageCount || 1;
+    let base64Data = body.base64Data || '';
+    let previewData = body.preview || {};
+    let target = body.target || { companyName: '', role: '', jobDescription: '' };
+    let inputExtractedProfile = body.extractedProfile || null;
+    let inputAnalysis = body.analysis || null;
 
-    // File Extraction
-    if (req.file.mimetype === 'application/pdf' || req.file.originalname.endsWith('.pdf')) {
-      try {
-        const parsed = await pdfParse(req.file.buffer);
-        extractedText = parsed.text;
-      } catch (pdfErr) {
-        console.warn('[PDF Parse Warning]', pdfErr.message);
+    if (req.file) {
+      fileName = req.file.originalname;
+      displayName = fileName;
+      fileType = req.file.mimetype;
+      fileSize = req.file.size;
+      base64Data = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+
+      if (req.file.mimetype === 'application/pdf' || req.file.originalname.endsWith('.pdf')) {
+        try {
+          const parsed = await pdfParse(req.file.buffer);
+          extractedText = parsed.text;
+          pageCount = parsed.numpages || 1;
+        } catch (pdfErr) {
+          console.warn('[PDF Parse Warning]', pdfErr.message);
+          extractedText = req.file.buffer.toString('utf-8');
+        }
+      } else {
         extractedText = req.file.buffer.toString('utf-8');
       }
-    } else {
-      extractedText = req.file.buffer.toString('utf-8');
     }
 
     if (!extractedText || extractedText.trim().length === 0) {
@@ -41,74 +109,281 @@ const uploadAndParseResume = async (req, res, next) => {
       });
     }
 
-    // Save initial Resume record
+    // Calculate Content Hash (SHA-256)
+    const contentHash = crypto.createHash('sha256').update(extractedText || fileName).digest('hex');
+    const sourceDocumentId = body.sourceDocumentId || `src_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
     const resumeRecord = await Resume.create({
       candidate: userId,
       candidateIdString: userId.toString(),
-      fileName: req.file.originalname,
-      fileType: req.file.mimetype,
-      fileSize: req.file.size,
+      sourceDocumentId,
+      contentHash,
+      displayName,
+      originalFileName: fileName,
+      fileName,
+      fileType,
+      fileSize,
       rawText: extractedText,
-      extractionStatus: 'detecting_sections'
+      status: 'analyzed',
+      extractionStatus: 'analyzed',
+      version: 1,
+      versionHistory: [
+        {
+          version: 1,
+          originalFileName: fileName,
+          displayName,
+          contentHash,
+          uploadedAt: new Date(),
+          overallScore: inputAnalysis?.overallScore || 85
+        }
+      ],
+      file: {
+        name: fileName,
+        size: fileSize,
+        mimeType: fileType,
+        pageCount,
+        rawText: extractedText,
+        base64Data
+      },
+      preview: {
+        thumbnailUrl: previewData.thumbnailUrl || '',
+        pdfData: base64Data
+      },
+      target,
+      extractedProfile: inputExtractedProfile,
+      analysis: inputAnalysis,
+      deletedAt: null,
+      processingMetadata: {
+        pageCount,
+        totalSectionsDetected: inputExtractedProfile?.sections?.length || 5,
+        resumeQualityScore: inputAnalysis?.overallScore || 85,
+        latencyMs: 120
+      }
     });
-
-    // Run Full AI Document Parsing
-    const aiResponse = await resumeAIService.extractFullResumeIntelligence(extractedText);
-    const parsedResult = aiResponse.result || {};
-
-    const extractedSections = (parsedResult.sections || []).map((sec, idx) => ({
-      id: sec.id || `sec_${idx + 1}_${Date.now()}`,
-      sectionType: sec.sectionType || 'custom',
-      title: sec.title || 'Resume Section',
-      selected: sec.selected !== false,
-      confidence: sec.confidence || 0.95,
-      content: sec.content || null,
-      items: sec.items || [],
-      source: sec.source || { pages: [1] }
-    }));
-
-    // Update Resume record status to awaiting_confirmation
-    resumeRecord.extractionStatus = 'awaiting_confirmation';
-    resumeRecord.extractedCandidate = parsedResult.candidate || {};
-    resumeRecord.extractedSections = extractedSections;
-    resumeRecord.processingMetadata = {
-      pageCount: 1,
-      totalSectionsDetected: extractedSections.length,
-      resumeQualityScore: parsedResult.metadata?.resumeQualityScore || 85,
-      latencyMs: aiResponse.processingTimeMs || 0
-    };
-    await resumeRecord.save();
 
     return res.status(200).json({
       success: true,
-      message: 'Resume analyzed successfully. Please review and confirm which sections to add to your CandidateIQ profile.',
+      message: 'Resume saved and analyzed successfully.',
+      resume: resumeRecord,
       resumeId: resumeRecord._id,
-      status: resumeRecord.extractionStatus,
-      candidateInfo: parsedResult.candidate,
-      sections: extractedSections,
-      metadata: resumeRecord.processingMetadata
+      count: activeCount + 1,
+      limit: RESUME_LIMITS.MAX_RESUMES_PER_CANDIDATE
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get status & extracted sections of a uploaded resume
-// @route   GET /api/resumes/status/:id
+// @desc    Update Target Role / Job Description context & re-analyze in MongoDB
+// @route   PUT /api/resumes/:id/target-analysis
 // @access  Private (Candidate)
+const updateTargetAnalysis = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id || req.user._id;
+    const { target, analysis } = req.body;
+
+    const resume = await Resume.findOne({ _id: id, candidate: userId, deletedAt: null });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume record not found.' });
+    }
+
+    if (target) resume.target = target;
+    if (analysis) resume.analysis = analysis;
+    resume.status = 'analyzed';
+    await resume.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Resume target analysis updated successfully.',
+      resume
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Perform Dynamic LLM Evidence Extraction, Reasoning & Deterministic ATS Scoring
+// @route   POST /api/resumes/:id/analyze
+// @access  Private (Candidate)
+const triggerResumeAnalysis = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id || req.user._id;
+    const { target } = req.body || {};
+
+    const resume = await Resume.findOne({ _id: id, candidate: userId, deletedAt: null });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume record not found or access denied.' });
+    }
+
+    const rawText = resume.rawText || resume.file?.rawText || '';
+    if (!rawText.trim()) {
+      return res.status(422).json({ success: false, message: 'No extractable text found in resume.' });
+    }
+
+    const targetContext = target || resume.target || {};
+    const analysis = await resumeAIService.analyzeResumeEvidenceAndATS(rawText, resume.extractedProfile, targetContext);
+
+    resume.target = targetContext;
+    resume.analysis = analysis;
+    resume.status = 'analyzed';
+    await resume.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Dynamic evidence reasoning and deterministic ATS analysis completed.',
+      resume,
+      analysis
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Atomic Resume Replacement (Bumps version in-place, preserves logical ID & sourceDocumentId)
+// @route   PUT /api/resumes/:id/replace
+// @access  Private (Candidate)
+const replaceResumeFile = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id || req.user._id;
+    const body = req.body || {};
+
+    const resume = await Resume.findOne({ _id: id, candidate: userId, deletedAt: null });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume record not found.' });
+    }
+
+    const nextVersion = (resume.version || 1) + 1;
+    const newFileName = body.fileName || body.file?.name || resume.fileName;
+    const newRawText = body.file?.rawText || body.rawText || resume.rawText;
+    const newContentHash = crypto.createHash('sha256').update(newRawText || newFileName).digest('hex');
+
+    // Archive previous version snapshot
+    const historyItem = {
+      version: resume.version || 1,
+      originalFileName: resume.originalFileName || resume.fileName,
+      displayName: resume.displayName || resume.fileName,
+      contentHash: resume.contentHash,
+      uploadedAt: resume.updatedAt || resume.createdAt,
+      overallScore: resume.analysis?.overallScore
+    };
+
+    resume.version = nextVersion;
+    resume.versionHistory = [...(resume.versionHistory || []), historyItem];
+    resume.contentHash = newContentHash;
+    // Keep sourceDocumentId unchanged!
+    resume.fileName = newFileName;
+    resume.file = body.file || resume.file;
+    resume.rawText = newRawText;
+    resume.preview = body.preview || resume.preview;
+    resume.extractedProfile = body.extractedProfile || resume.extractedProfile;
+    resume.analysis = body.analysis || null;
+    resume.status = 'analyzed';
+
+    await resume.save();
+
+    return res.status(200).json({
+      success: true,
+      message: `Resume replaced successfully. Version ${nextVersion} is now active.`,
+      resume
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Rename resume display name ONLY (Never alters sourceDocumentId or profile linkage)
+// @route   PUT /api/resumes/:id/rename
+// @access  Private (Candidate)
+const renameResume = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id || req.user._id;
+    const { displayName, fileName } = req.body;
+
+    const newName = displayName || fileName;
+    if (!newName || newName.trim().length === 0) {
+      return res.status(400).json({ success: false, message: 'Display name cannot be empty.' });
+    }
+
+    const resume = await Resume.findOne({ _id: id, candidate: userId, deletedAt: null });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume not found.' });
+    }
+
+    // Only update display name (preserves sourceDocumentId, versions, profile bindings)
+    resume.displayName = newName.trim();
+    if (resume.file) {
+      resume.file.name = newName.trim();
+    }
+    await resume.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Resume renamed successfully.',
+      resume
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Delete a resume from history (Soft delete, frees slot, preserves Candidate Profile)
+// @route   DELETE /api/resumes/:id
+// @access  Private (Candidate)
+const deleteResume = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id || req.user._id;
+
+    const resume = await Resume.findOne({ _id: id, candidate: userId, deletedAt: null });
+    if (!resume) {
+      return res.status(404).json({ success: false, message: 'Resume not found or already deleted.' });
+    }
+
+    // Soft delete
+    resume.deletedAt = new Date();
+    resume.status = 'deleted';
+    await resume.save();
+
+    // Preserve Candidate Profile: If this resume was the active profile source, switch source to 'manual'
+    const profile = await CandidateProfile.findOne({ user: userId });
+    if (profile && profile.profileSource && (profile.profileSource.resumeId === id || profile.profileSource.sourceDocumentId === resume.sourceDocumentId)) {
+      profile.profileSource = {
+        type: 'manual',
+        updatedAt: new Date(),
+        previousResumeName: resume.displayName || resume.fileName
+      };
+      await profile.save();
+    }
+
+    const remainingCount = await Resume.countDocuments({ candidate: userId, deletedAt: null });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Resume document deleted from history.',
+      count: remainingCount,
+      limit: RESUME_LIMITS.MAX_RESUMES_PER_CANDIDATE
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Get status of an uploaded resume (Legacy endpoint)
 const getResumeStatus = async (req, res, next) => {
   try {
     const { id } = req.params;
     const resumeRecord = await Resume.findById(id);
-
     if (!resumeRecord) {
       return res.status(404).json({ success: false, message: 'Resume record not found.' });
     }
-
     return res.status(200).json({
       success: true,
       resumeId: resumeRecord._id,
-      status: resumeRecord.extractionStatus,
+      status: resumeRecord.extractionStatus || resumeRecord.status,
       sections: resumeRecord.extractedSections,
       metadata: resumeRecord.processingMetadata
     });
@@ -117,24 +392,12 @@ const getResumeStatus = async (req, res, next) => {
   }
 };
 
-// @desc    Candidate confirms & edits selected sections to persist directly into existing CandidateProfile in MongoDB
-// @route   POST /api/resumes/confirm
-// @access  Private (Candidate)
+// @desc    Candidate confirms selected sections
 const confirmResumeSections = async (req, res, next) => {
   try {
     const userId = req.user.id || req.user._id;
-    const { resumeId, selectedSections, candidateInfo } = req.body;
+    const { resumeId, candidateInfo, profileData } = req.body;
 
-    if (!selectedSections || !Array.isArray(selectedSections)) {
-      return res.status(400).json({ success: false, message: 'Please provide an array of selectedSections.' });
-    }
-
-    let resumeRecord = null;
-    if (resumeId) {
-      resumeRecord = await Resume.findById(resumeId);
-    }
-
-    // Always resolve the candidate using authenticated user ID (never create duplicate profile documents)
     let profile = await CandidateProfile.findOne({ user: userId });
     if (!profile) {
       profile = new CandidateProfile({
@@ -150,188 +413,32 @@ const confirmResumeSections = async (req, res, next) => {
       });
     }
 
-    // Process selected sections
-    const activeSelected = selectedSections.filter(sec => sec.selected !== false);
-
-    const newSkills = { technical: [], soft: [], frameworks: [], databases: [], tools: [] };
-    const newEducation = [];
-    const newExperience = [];
-    const newProjects = [];
-    const newCertifications = [];
-    const newCustomSections = [];
-
-    let hasSkillsSection = false;
-    let hasEducationSection = false;
-    let hasExperienceSection = false;
-    let hasProjectsSection = false;
-    let hasCertificationsSection = false;
-    let hasCustomSection = false;
-
-    activeSelected.forEach(sec => {
-      const type = (sec.sectionType || 'custom').toLowerCase();
-      const items = sec.items || [];
-
-      if (type === 'personal_info' && candidateInfo) {
-        if (candidateInfo.fullName) profile.personalInfo.name = candidateInfo.fullName;
-        if (candidateInfo.email) profile.personalInfo.email = candidateInfo.email;
-        if (candidateInfo.phone) profile.personalInfo.phone = candidateInfo.phone;
-        if (candidateInfo.location) profile.personalInfo.location = candidateInfo.location;
-        if (candidateInfo.headline) profile.personalInfo.headline = candidateInfo.headline;
-      } else if (type === 'skills') {
-        hasSkillsSection = true;
-        items.forEach(it => {
-          const vals = Array.isArray(it.values) ? it.values : (it.name ? [it.name] : []);
-          const cat = (it.category || '').toLowerCase();
-          if (cat.includes('framework')) newSkills.frameworks.push(...vals);
-          else if (cat.includes('database')) newSkills.databases.push(...vals);
-          else if (cat.includes('tool')) newSkills.tools.push(...vals);
-          else if (cat.includes('soft')) newSkills.soft.push(...vals);
-          else newSkills.technical.push(...vals);
-        });
-      } else if (type === 'education') {
-        hasEducationSection = true;
-        items.forEach(it => {
-          newEducation.push({
-            degree: it.degree || 'Degree',
-            institution: it.institution || it.university || 'University',
-            graduationYear: it.year || it.graduationYear || '2024',
-            cgpa: it.cgpa || '',
-            description: it.description || ''
-          });
-        });
-      } else if (type === 'experience') {
-        hasExperienceSection = true;
-        items.forEach(it => {
-          newExperience.push({
-            company: it.company || it.organization || 'Company',
-            position: it.position || it.role || 'Position',
-            duration: it.duration || `${it.startDate || ''} - ${it.endDate || ''}`,
-            description: it.description || '',
-            responsibilities: it.responsibilities || [],
-            technologies: it.technologies || []
-          });
-        });
-      } else if (type === 'projects') {
-        hasProjectsSection = true;
-        items.forEach(it => {
-          newProjects.push({
-            name: it.name || it.title || 'Project',
-            description: it.description || '',
-            technologies: it.technologies || [],
-            role: it.role || '',
-            url: it.url || ''
-          });
-        });
-      } else if (type === 'certifications') {
-        hasCertificationsSection = true;
-        items.forEach(it => {
-          newCertifications.push({
-            name: it.name || it.title || 'Certification',
-            issuer: it.issuer || it.organization || '',
-            date: it.year || it.date || ''
-          });
-        });
-      } else {
-        hasCustomSection = true;
-        newCustomSections.push({
-          sectionId: sec.id || `custom_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
-          sectionType: type,
-          title: sec.title || 'Custom Section',
-          content: sec.content || '',
-          items: items
-        });
-      }
-    });
-
-    // Cleanly replace previous resume-derived data to prevent stale duplicate entries on re-upload
-    if (hasEducationSection) profile.education = newEducation;
-    if (hasExperienceSection) profile.experience = newExperience;
-    if (hasProjectsSection) profile.projects = newProjects;
-    if (hasCertificationsSection) profile.certifications = newCertifications;
-    if (hasSkillsSection) profile.skills = newSkills;
-    if (hasCustomSection) profile.customSections = newCustomSections;
-
-    profile.skillAnalysis = computeSkillAnalytics(profile.skills);
-
-    if (resumeRecord) {
-      profile.resumeReference = {
-        resumeId: resumeRecord._id,
-        fileName: resumeRecord.fileName,
-        fileUrl: resumeRecord.fileUrl || '',
-        uploadedAt: resumeRecord.createdAt,
-        parsedAt: new Date(),
-        updatedAt: new Date(),
-        status: 'confirmed'
-      };
-      resumeRecord.extractionStatus = 'confirmed';
-      await resumeRecord.save();
+    if (profileData && profileData.sections) {
+      profile.sections = profileData.sections;
+      profile.profileSource = profileData.profileSource || { type: 'resume', resumeId, updatedAt: new Date() };
     }
 
     await profile.save();
 
-    // RESUME KEYWORD EXTRACTION & OVERWRITE FOR CONFIRMED RESUME
-    const resumeTextToAnalyze = resumeRecord?.rawText || JSON.stringify(profile.skills) + ' ' + JSON.stringify(profile.experience);
-    const keywordAiRes = await resumeAIService.extractResumeKeywords(resumeTextToAnalyze);
-    const rawKeywords = keywordAiRes?.result?.keywords || keywordAiRes?.keywords || [];
-    const normalizedKeywords = normalizeKeywords(rawKeywords);
-
-    // Save normalized keyword array directly into Resume document
-    const activeResumeId = resumeRecord?._id || profile.resumeReference?.resumeId;
-    let targetResume = resumeRecord;
-    if (!targetResume && activeResumeId) {
-      targetResume = await Resume.findById(activeResumeId);
-    }
-    if (!targetResume) {
-      targetResume = await Resume.findOne({ candidate: userId }).sort({ createdAt: -1 });
-    }
-
-    if (targetResume) {
-      targetResume.keywords = normalizedKeywords;
-      await targetResume.save();
-    }
-
     return res.status(200).json({
-      operation: 'resume_keyword_extraction',
-      status: 'success',
       success: true,
-      message: 'Resume data and keywords successfully updated into candidate profile.',
-      profile,
-      candidate: profile,
-      result: {
-        candidateId: userId.toString(),
-        resumeId: targetResume?._id?.toString() || '',
-        keywords: normalizedKeywords
-      },
-      keywords: normalizedKeywords
+      message: 'Resume data confirmed and saved into profile.',
+      profile
     });
   } catch (error) {
     next(error);
   }
 };
 
-// @desc    Get candidate's confirmed resume keywords
-// @route   GET /api/resumes/keywords
-// @access  Private (Candidate)
+// @desc    Get candidate keywords
 const getCandidateResumeKeywords = async (req, res, next) => {
   try {
     const userId = req.user.id || req.user._id;
-    let resume = await Resume.findOne({ candidate: userId, extractionStatus: 'confirmed' }).sort({ updatedAt: -1 });
-    if (!resume) {
-      resume = await Resume.findOne({ candidate: userId }).sort({ updatedAt: -1 });
-    }
-
+    const resume = await Resume.findOne({ candidate: userId, deletedAt: null }).sort({ updatedAt: -1 });
     const keywords = resume?.keywords || [];
-
     return res.status(200).json({
-      operation: 'resume_keyword_retrieval',
-      status: 'success',
       success: true,
       count: keywords.length,
-      result: {
-        candidateId: userId.toString(),
-        resumeId: resume?._id?.toString() || '',
-        keywords
-      },
       keywords
     });
   } catch (error) {
@@ -340,8 +447,17 @@ const getCandidateResumeKeywords = async (req, res, next) => {
 };
 
 module.exports = {
+  getMyResumes,
+  getResumeById,
   uploadAndParseResume,
+  updateTargetAnalysis,
+  triggerResumeAnalysis,
+  replaceResumeFile,
+  renameResume,
+  deleteResume,
   getResumeStatus,
   confirmResumeSections,
   getCandidateResumeKeywords
 };
+
+

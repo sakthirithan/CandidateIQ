@@ -10,6 +10,21 @@ const candidateProfileSchema = new mongoose.Schema(
     userIdString: {
       type: String
     },
+    // Dynamic normalized profile sections array (Source of Truth)
+    sections: [mongoose.Schema.Types.Mixed],
+    profileSource: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({ type: 'manual', sourceDocumentId: '', resumeId: null, updatedAt: new Date() })
+    },
+    profileOverrides: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({})
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: () => ({ version: 1, isComplete: true, updatedAt: new Date() })
+    },
+
     personalInfo: {
       name: { type: String, required: true },
       email: { type: String, required: true },

@@ -171,8 +171,96 @@ Return ONLY valid JSON matching this exact structure:
 
 Candidate Resume Text:
 ${rawText}
+`,
+
+  extractEvidenceAndReasoning: ({ rawText, structuredResume, targetContext }) => `You are an audit-grade evidence-based resume intelligence engine for CandidateIQ.
+
+YOUR MANDATE:
+Do NOT assume what the candidate knows or guess skills not demonstrated.
+Determine what the resume ACTUALLY demonstrates through multi-tier evidence reasoning.
+
+EVIDENCE LEVEL DEFINITIONS:
+1. "direct": Explicitly written in the resume text (e.g. "Built REST APIs in Express.js").
+2. "contextual": Not stated as an explicit claim, but strongly supported by adjacent evidence (e.g. Node.js + Express.js in a full-stack web project provides contextual evidence of server-side web development).
+3. "derived": Inferred by combining multiple distinct components (e.g. React frontend + Node backend + MongoDB database demonstrates a full-stack database-backed architecture).
+4. "unsupported": A claim or requirement that lacks sufficient supporting evidence in the resume (e.g. listing "Express.js" as a standalone keyword does NOT prove REST API design, or a JD requirement for which the candidate has no evidence).
+
+CRITICAL GROUNDING RULES:
+- Never fabricate quotes or citations.
+- Every claim must reference exact source text snippets from the resume.
+- If a target JD is provided, evaluate EVERY job requirement:
+  - Classify as: "DIRECT MATCH", "CONTEXTUAL MATCH", "TRANSFERABLE / RELATED", "INSUFFICIENT EVIDENCE", or "MISSING".
+  - If JD requires a technology the candidate lacks (e.g. Vue.js) but the candidate has a related technology (e.g. React), classify as "TRANSFERABLE / RELATED", note React as related frontend experience, but explicitly state that proficiency in the required technology is NOT verified.
+- Critical fixes must address REAL evidence gaps without telling the candidate to fabricate experience.
+
+TARGET CONTEXT:
+Company: ${targetContext?.companyName || 'Not specified'}
+Role: ${targetContext?.role || 'General Software Engineering'}
+Job Description:
+${targetContext?.jobDescription || 'No specific job description provided. Evaluate general technical competencies.'}
+
+STRUCTURED RESUME DATA:
+${structuredResume ? JSON.stringify(structuredResume, null, 2) : 'Not available'}
+
+RAW RESUME TEXT:
+${rawText}
+
+Return ONLY valid JSON strictly adhering to this schema:
+{
+  "claims": [
+    {
+      "id": "claim_1",
+      "claim": "Direct/Contextual/Derived statement of capability",
+      "evidenceLevel": "direct" | "contextual" | "derived" | "unsupported",
+      "confidence": 0.95,
+      "supportingEvidence": [
+        {
+          "sourceId": "src_1",
+          "type": "project" | "skill" | "experience" | "summary" | "resume_text",
+          "text": "Exact quote from resume",
+          "page": 1
+        }
+      ],
+      "reasoning": "Clear explanation of how evidence supports the claim.",
+      "verificationGap": null
+    }
+  ],
+  "jobMatch": [
+    {
+      "requirement": "Job requirement title",
+      "matchType": "DIRECT MATCH" | "CONTEXTUAL MATCH" | "TRANSFERABLE / RELATED" | "INSUFFICIENT EVIDENCE" | "MISSING",
+      "confidence": 0.88,
+      "candidateEvidence": "Supporting evidence summary",
+      "reasoning": "Explanation of alignment or transferability",
+      "recommendation": "Constructive advice"
+    }
+  ],
+  "impactSignals": [
+    {
+      "action": "Optimized",
+      "metric": "35%",
+      "outcome": "page load time",
+      "technicalContext": "Frontend performance",
+      "evidenceLevel": "direct"
+    }
+  ],
+  "technicalKeywords": ["React", "Node.js", "Express.js", "MongoDB"],
+  "softSkills": ["Problem Solving", "Collaboration"],
+  "strengths": ["Clear strength 1", "Clear strength 2"],
+  "weaknesses": ["Evidence gap 1", "Evidence gap 2"],
+  "criticalFixes": ["Constructive fix 1"],
+  "categoryTips": {
+    "ATS": [{ "type": "good", "tip": "Clean standard format", "explanation": "Easily parsed" }],
+    "toneAndStyle": [{ "type": "good", "tip": "Strong action verbs", "explanation": "Conveys technical ownership" }],
+    "content": [{ "type": "improve", "tip": "Add quantifiable metrics", "explanation": "Quantified outcomes substantiate scale" }],
+    "structure": [{ "type": "good", "tip": "Consistent sections", "explanation": "Improves readability" }],
+    "skills": [{ "type": "good", "tip": "Strong technical coverage", "explanation": "Covers core stack" }]
+  },
+  "explanation": "High-level summary of the candidate's evidence depth and role fit."
+}
 `
 };
 
 module.exports = resumePrompts;
+
 
