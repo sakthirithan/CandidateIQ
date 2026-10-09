@@ -384,7 +384,34 @@ module.exports = {
   getAllUserActivitiesController: async (req, res, next) => {
     try {
       const userId = req.user.id || req.user._id;
-      const activities = await ImprovementActivity.find({ userId }).sort({ createdAt: -1 });
+
+      // Auto-ensure activities for all completed/evaluated interviews belonging to this user
+      const evaluatedInterviews = await Interview.find({
+        $or: [{ candidate: userId }, { candidateIdString: userId.toString() }],
+        $or: [{ status: 'completed' }, { 'evaluation.status': 'completed' }, { overallEvaluation: { $ne: null } }]
+      });
+
+      for (const interview of evaluatedInterviews) {
+        const existing = await ImprovementActivity.findOne({ sourceInterviewId: interview._id });
+        if (!existing && (interview.evaluation || interview.overallEvaluation)) {
+          const specs = await generateActivitiesForInterview(interview);
+          for (const spec of specs) {
+            await ImprovementActivity.create({
+              userId,
+              sourceInterviewId: interview._id,
+              ...spec,
+              latestValue: spec.baselineValue,
+              bestValue: spec.baselineValue,
+              status: 'PENDING'
+            });
+          }
+        }
+      }
+
+      const activities = await ImprovementActivity.find({ userId })
+        .populate('sourceInterviewId', 'jobTitle company status evaluation overallEvaluation')
+        .sort({ createdAt: -1 });
+
       const total = activities.length;
       const completed = activities.filter(a => a.status === 'COMPLETED').length;
       const inProgress = activities.filter(a => a.status === 'IN_PROGRESS' || a.status === 'PENDING').length;

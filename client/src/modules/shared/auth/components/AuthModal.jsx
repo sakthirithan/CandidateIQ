@@ -83,31 +83,6 @@ function AuthModal({ isOpen, onClose, onLogin, onRegister }) {
           </p>
         </div>
 
-        {/* Quick Demo Credentials Pill Bar */}
-        {mode === 'login' && (
-          <div className="p-2.5 rounded-2xl bg-indigo-50/70 border border-indigo-100/80 space-y-2">
-            <span className="text-[10px] font-bold text-indigo-600 uppercase tracking-wider block text-center flex items-center justify-center gap-1">
-              <Zap className="w-3 h-3" /> Quick Demo One-Click Sign In
-            </span>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('candidate')}
-                className="py-1.5 px-2 bg-white hover:bg-indigo-600 hover:text-white border border-indigo-200 text-indigo-900 rounded-xl text-xs font-semibold transition-all shadow-2xs text-center"
-              >
-                Candidate Demo
-              </button>
-              <button
-                type="button"
-                onClick={() => handleQuickDemo('recruiter')}
-                className="py-1.5 px-2 bg-white hover:bg-slate-900 hover:text-white border border-slate-200 text-slate-900 rounded-xl text-xs font-semibold transition-all shadow-2xs text-center"
-              >
-                Recruiter Demo
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* Role Cards for Registration */}
         {mode === 'register' && !showPaymentStep && (
           <div className="grid grid-cols-2 gap-3">

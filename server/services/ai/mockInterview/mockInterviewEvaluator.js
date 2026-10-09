@@ -12,24 +12,22 @@ const { z } = require('zod');
 
 // Helper to normalize feedback to strictly 20-25 words
 function normalizeFeedbackWordCount(feedbackText, answerState = 'answered', defaultType = 'voice') {
-  if (!feedbackText || typeof feedbackText !== 'string' || answerState === 'irrelevant') {
+  let cleaned = (feedbackText || '').replace(/\s+/g, ' ').trim();
+
+  if (!cleaned) {
     if (answerState === 'irrelevant') {
-      return "Your response does not address the requested technical requirements, diagnostic sequence, or technical scenario objectives.";
+      cleaned = "Your response does not address the requested technical requirements, diagnostic sequence, or scenario objectives for this candidate evaluation.";
+    } else if (answerState === 'unusable') {
+      cleaned = "Your spoken voice response could not be reliably transcribed or evaluated due to audio distortion or missing speech clarity in recording.";
+    } else if (answerState === 'not_answered') {
+      cleaned = "No usable response was recorded for this question during the interview, so technical reasoning could not be evaluated for scoring.";
+    } else if (defaultType === 'voice') {
+      cleaned = "Your spoken response demonstrated relevant concepts, but adding concrete implementation details and system trade-offs would strengthen the technical explanation.";
+    } else {
+      cleaned = "Your written explanation addressed the core problem, but stronger justification of database and scalability trade-offs would demonstrate deeper engineering reasoning.";
     }
-    if (answerState === 'unusable') {
-      return "Your spoken voice response could not be reliably transcribed or evaluated due to audio distortion or missing speech clarity.";
-    }
-    if (answerState === 'not_answered') {
-      return "No usable response was recorded for this question during the interview, so technical reasoning could not be evaluated.";
-    }
-    if (defaultType === 'voice') {
-      return "Your spoken response demonstrated relevant concepts, but adding concrete implementation details and system trade-offs would strengthen the technical explanation.";
-    }
-    return "Your written explanation addressed the core problem, but stronger justification of database and scalability trade-offs would demonstrate deeper engineering reasoning.";
   }
 
-  // Clean extra spaces
-  const cleaned = feedbackText.replace(/\s+/g, ' ').trim();
   const words = cleaned.split(' ');
 
   if (words.length >= 20 && words.length <= 25) {
@@ -49,17 +47,23 @@ function normalizeFeedbackWordCount(feedbackText, answerState = 'answered', defa
     return words.slice(0, 22).join(' ') + ' for strong engineering depth.';
   }
 
-  const filler = " demonstrating solid engineering reasoning aligned with the role expectations and candidate experience requirements.";
-  const combined = (cleaned + filler).split(' ');
-  return combined.slice(0, 23).join(' ') + '.';
+  const fillerPool = "demonstrating solid technical engineering reasoning aligned with role expectations and candidate experience criteria for comprehensive profile verification.".split(' ');
+  const combined = [...words];
+  let fillerIdx = 0;
+  while (combined.length < 22 && fillerIdx < fillerPool.length) {
+    combined.push(fillerPool[fillerIdx++]);
+  }
+  let resultStr = combined.join(' ').replace(/[,;:]$/, '');
+  if (!resultStr.endsWith('.')) resultStr += '.';
+  return resultStr;
 }
 
-// Generate dynamic question-specific irrelevant feedback (No context leakage across questions!)
+// Generate dynamic question-specific irrelevant feedback
 function generateIrrelevantFeedback(questionText, topic) {
   const cleanTopic = (topic || '').trim();
-  const summary = cleanTopic ? cleanTopic : (questionText ? questionText.slice(0, 40) + '...' : 'technical scenario');
-  const text = `Your response does not address the requested ${summary} technical requirements, diagnostic sequence, or expected scenario objectives.`;
-  return normalizeFeedbackWordCount(text, 'irrelevant');
+  const summary = cleanTopic ? cleanTopic : (questionText ? questionText.slice(0, 30) + '...' : 'technical scenario');
+  const text = `Your candidate response does not address the requested ${summary} technical requirements, diagnostic sequence, or expected scenario objectives for this target interview evaluation.`;
+  return normalizeFeedbackWordCount(text, 'answered');
 }
 
 // Stage 1: Answer State Detection

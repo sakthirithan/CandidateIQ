@@ -15,7 +15,8 @@ import {
 
 import {
   RecruiterIQDashboard, RecruiterJobManagement, CandidateIntelligenceProfile,
-  RecruiterCandidateManagement, CandidateIQComparison, AIRecruitmentAssistantIQ
+  RecruiterCandidateManagement, CandidateIQComparison, AIRecruitmentAssistantIQ,
+  CreateInterviewPage, RecruiterInterviewsPage
 } from './modules/hr';
 
 import { LoginModal, RegisterModal, PaymentDemoModal, ForgotPasswordModal, DemoModal } from './modules/shared';
@@ -32,6 +33,26 @@ function InterviewImprovementRouteWrapper() {
       interviewId={interviewId}
       onBack={() => navigate('/activities')}
       onNavigateToMockInterview={() => navigate('/interview')}
+    />
+  );
+}
+
+function JobDetailsRouteWrapper({ returnTab, navigateTab, selectedJobId, setSelectedJobId }) {
+  const { jobId } = useParams();
+  const effectiveId = jobId || selectedJobId;
+
+  useEffect(() => {
+    if (jobId && jobId !== selectedJobId) {
+      setSelectedJobId(jobId);
+    }
+  }, [jobId, selectedJobId, setSelectedJobId]);
+
+  return (
+    <JobDetailsView
+      jobId={effectiveId}
+      returnTab={returnTab}
+      onBack={() => navigateTab(returnTab || 'jobs')}
+      onNavigate={navigateTab}
     />
   );
 }
@@ -267,35 +288,54 @@ function App() {
             <Route
               path="/jobs"
               element={
-                <JobDiscovery
-                  onSelectJob={(jobId) => {
-                    setSelectedJobId(jobId);
-                    setJobDetailsReturnTab('jobs');
-                    navigateTab('job-details', jobId);
-                  }}
-                />
+                <ErrorBoundary title="Job Discovery Error">
+                  <JobDiscovery
+                    onSelectJob={(jobId) => {
+                      setSelectedJobId(jobId);
+                      setJobDetailsReturnTab('jobs');
+                      navigateTab('job-details', jobId);
+                    }}
+                  />
+                </ErrorBoundary>
               }
             />
             <Route
               path="/jobs/:jobId"
               element={
-                <JobDetailsView
-                  jobId={selectedJobId || 'job_1'}
-                  returnTab={jobDetailsReturnTab}
-                  onBack={() => navigateTab(jobDetailsReturnTab || 'jobs')}
-                  onNavigate={navigateTab}
-                />
+                <ErrorBoundary title="Job Details Error">
+                  <JobDetailsRouteWrapper
+                    returnTab={jobDetailsReturnTab}
+                    navigateTab={navigateTab}
+                    selectedJobId={selectedJobId}
+                    setSelectedJobId={setSelectedJobId}
+                  />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/job-details/:jobId"
+              element={
+                <ErrorBoundary title="Job Details Error">
+                  <JobDetailsRouteWrapper
+                    returnTab={jobDetailsReturnTab}
+                    navigateTab={navigateTab}
+                    selectedJobId={selectedJobId}
+                    setSelectedJobId={setSelectedJobId}
+                  />
+                </ErrorBoundary>
               }
             />
             <Route
               path="/job-details"
               element={
-                <JobDetailsView
-                  jobId={selectedJobId || 'job_1'}
-                  returnTab={jobDetailsReturnTab}
-                  onBack={() => navigateTab(jobDetailsReturnTab || 'jobs')}
-                  onNavigate={navigateTab}
-                />
+                <ErrorBoundary title="Job Details Error">
+                  <JobDetailsRouteWrapper
+                    returnTab={jobDetailsReturnTab}
+                    navigateTab={navigateTab}
+                    selectedJobId={selectedJobId}
+                    setSelectedJobId={setSelectedJobId}
+                  />
+                </ErrorBoundary>
               }
             />
             <Route
@@ -354,6 +394,10 @@ function App() {
             <Route
               path="/evidence-intelligence"
               element={<Navigate to="/mock-interview" replace />}
+            />
+            <Route
+              path="/candidate/interviews"
+              element={<CandidateHRInterviews />}
             />
             <Route
               path="/hr-interviews"
@@ -446,6 +490,38 @@ function App() {
               element={
                 <ErrorBoundary title="Candidate Management Error">
                   <RecruiterCandidateManagement onNavigate={navigateTab} />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/hr-interviews-recruiter"
+              element={
+                <ErrorBoundary title="Candidate Video Interviews Error">
+                  <RecruiterInterviewsPage onNavigate={navigateTab} />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/hr/interviews"
+              element={
+                <ErrorBoundary title="Candidate Video Interviews Error">
+                  <RecruiterInterviewsPage onNavigate={navigateTab} />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/create-interview-recruiter"
+              element={
+                <ErrorBoundary title="Create Video Interview Error">
+                  <CreateInterviewPage onNavigate={navigateTab} />
+                </ErrorBoundary>
+              }
+            />
+            <Route
+              path="/hr/interviews/create"
+              element={
+                <ErrorBoundary title="Create Video Interview Error">
+                  <CreateInterviewPage onNavigate={navigateTab} />
                 </ErrorBoundary>
               }
             />

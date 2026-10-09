@@ -190,21 +190,65 @@ const getRecruiterDashboardOverview = async (req, res, next) => {
  */
 const compareCandidates = async (req, res, next) => {
   try {
-    const profiles = await CandidateProfile.find().limit(5).lean();
+    const { candidateIds, jobId } = req.body || {};
+    let query = {};
+    if (jobId) {
+      query.job = jobId;
+    }
+    if (candidateIds && Array.isArray(candidateIds) && candidateIds.length > 0) {
+      query.candidate = { $in: candidateIds };
+    }
 
-    const candidatesFormatted = profiles.map(p => ({
-      id: p.user ? p.user.toString() : p._id.toString(),
-      name: p.personalInfo?.name || 'Candidate',
-      headline: p.personalInfo?.headline || 'Software Engineer',
-      technical: (p.skills?.technical || []).length * 10 || 75,
-      behavioural: 80,
-      jobMatch: 85,
-      experience: (p.experience || []).length * 20 || 70,
-      interview: 80,
-      overall: 82,
-      strongSkills: p.skills?.technical?.slice(0, 4) || [],
-      missingSkills: ['Docker']
-    }));
+    const applications = await Application.find(query)
+      .populate('candidate', 'name email role')
+      .populate('candidateProfile')
+      .populate('job', 'title company requiredSkills')
+      .limit(10)
+      .lean();
+
+    if (applications.length === 0) {
+      const fallbackProfiles = await CandidateProfile.find().limit(5).lean();
+      const candidatesFormatted = fallbackProfiles.map(p => ({
+        id: p.user ? p.user.toString() : p._id.toString(),
+        name: p.personalInfo?.name || 'Candidate',
+        headline: p.personalInfo?.headline || 'Software Engineer',
+        technical: (p.skills?.technical || []).length * 10 || 75,
+        behavioural: 80,
+        jobMatch: 85,
+        experience: (p.experience || []).length * 20 || 70,
+        interview: 80,
+        overall: 82,
+        strongSkills: p.skills?.technical?.slice(0, 4) || ['React', 'Node.js'],
+        missingSkills: []
+      }));
+      return res.status(200).json({ success: true, comparison: candidatesFormatted });
+    }
+
+    const candidatesFormatted = applications.map(app => {
+      const profile = app.candidateProfile || {};
+      const job = app.job || {};
+      const reqSkills = job.requiredSkills || [];
+      const candSkills = profile.skills?.technical || app.professionalSnapshot?.skills || ['React', 'Node.js'];
+      const strongSkills = candSkills.filter(s => reqSkills.some(r => r.toLowerCase() === s.toLowerCase()));
+      const missingSkills = reqSkills.filter(r => !candSkills.some(s => s.toLowerCase() === r.toLowerCase()));
+
+      return {
+        id: app.candidate?._id?.toString() || app._id.toString(),
+        applicationId: app._id.toString(),
+        name: app.candidateSnapshot?.name || app.candidate?.name || 'Candidate',
+        headline: app.professionalSnapshot?.designation || 'Software Engineer',
+        jobTitle: job.title || 'Requisition Role',
+        technical: app.matchAnalysis?.technicalMatch || 85,
+        behavioural: 80,
+        jobMatch: app.overallScore || app.matchAnalysis?.overallMatch || 85,
+        experience: app.matchAnalysis?.experienceMatch || 80,
+        interview: 85,
+        overall: app.overallScore || 85,
+        status: (app.status || 'applied').replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+        strongSkills: strongSkills.length > 0 ? strongSkills : candSkills.slice(0, 4),
+        missingSkills
+      };
+    });
 
     return res.status(200).json({
       success: true,
@@ -225,9 +269,22 @@ const queryAIAssistant = async (req, res, next) => {
     const { prompt, query } = req.body;
     const textPrompt = prompt || query || 'Summarize current applicant pool metrics';
 
+    const totalJobs = await Job.countDocuments({ status: 'published' });
+    const totalApplications = await Application.countDocuments();
+    const shortlistedApps = await Application.countDocuments({ status: 'shortlisted' });
+    const scheduledInterviews = await Interview.countDocuments({ status: 'scheduled' });
+
+    let responseText = `CandidateIQ AI Assistant Analysis for: "${textPrompt}":\n\n`;
+    responseText += `• Active Published Jobs: ${totalJobs}\n`;
+    responseText += `• Total Applications Received: ${totalApplications}\n`;
+    responseText += `• Shortlisted Candidates: ${shortlistedApps}\n`;
+    responseText += `• Scheduled Recruiter Interviews: ${scheduledInterviews}\n\n`;
+    responseText += `All metrics are synchronized live with your MongoDB database records.`;
+
     return res.status(200).json({
       success: true,
-      response: `Recruiter AI Assistant: Analyzing query "${textPrompt}". All active candidates and applications in MongoDB are synthesized above with evidence confidence provenance.`
+      query: textPrompt,
+      response: responseText
     });
   } catch (error) {
     next(error);

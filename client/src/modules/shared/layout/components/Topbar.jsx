@@ -15,7 +15,7 @@ function Topbar({ activeTab, userRole, onOpenAuth, onOpenNotifications, unreadCo
       case 'interview-results': return 'Interview Intelligence Report';
       case 'skill-gaps': return 'Target Role Skill Gap Analysis';
       case 'recruiter-dashboard': return 'Recruiter Command Center';
-      case 'candidates-recruiter': return 'Candidate Pool Database';
+      case 'candidates-recruiter': return 'Applications & Candidates';
       case 'candidate-intelligence': return 'Candidate Intelligence Profile';
       case 'comparison': return 'Multi-Candidate Comparison Matrix';
       case 'assistant': return 'AI Recruitment Assistant';

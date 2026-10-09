@@ -18,7 +18,9 @@ import {
   Zap,
   ChevronDown,
   Bot,
-  BookmarkCheck
+  BookmarkCheck,
+  Calendar,
+  Video
 } from 'lucide-react';
 
 function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange }) {
@@ -187,60 +189,147 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
         {isRecruiter && (
           <>
             <div className="space-y-1">
-              <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Recruiter Workspace</span>
+              {!isCollapsed && (
+                <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                  Recruiter Workspace
+                </span>
+              )}
 
-              <button onClick={() => setActiveTab('recruiter-dashboard')} className={getNavButtonClass('recruiter-dashboard')}>
-                <div className="flex items-center gap-3">
-                  <LayoutDashboard className="w-4 h-4" /> Dashboard
+              <button
+                onClick={() => setActiveTab('recruiter-dashboard')}
+                className={getNavButtonClass('recruiter-dashboard')}
+                title={isCollapsed ? 'Dashboard' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <LayoutDashboard className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Dashboard</span>}
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M14</span>
+                {!isCollapsed && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white shrink-0 ml-auto">
+                    M14
+                  </span>
+                )}
               </button>
 
-              <button onClick={() => setActiveTab('jobs-recruiter')} className={getNavButtonClass('jobs-recruiter')}>
-                <div className="flex items-center gap-3">
-                  <Briefcase className="w-4 h-4" /> Jobs
+              <button
+                onClick={() => setActiveTab('jobs-recruiter')}
+                className={getNavButtonClass('jobs-recruiter')}
+                title={isCollapsed ? 'Jobs' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Briefcase className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Jobs</span>}
                 </div>
               </button>
 
-              <button onClick={() => setActiveTab('candidates-recruiter')} className={getNavButtonClass('candidates-recruiter')}>
-                <div className="flex items-center gap-3">
-                  <Users className="w-4 h-4" /> Candidates & Applications
+              <button
+                onClick={() => setActiveTab('candidates-recruiter')}
+                className={getNavButtonClass('candidates-recruiter')}
+                title={isCollapsed ? 'Applications & Candidates' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Users className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Applications & Candidates</span>}
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M15</span>
+                {!isCollapsed && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white shrink-0 ml-auto">
+                    M15
+                  </span>
+                )}
+              </button>
+
+              <button
+                onClick={() => setActiveTab('hr-interviews-recruiter')}
+                className={getNavButtonClass('hr-interviews-recruiter')}
+                title={isCollapsed ? 'Candidate Interviews' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Video className="w-4 h-4 text-purple-600 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Candidate Interviews</span>}
+                </div>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('create-interview-recruiter')}
+                className={getNavButtonClass('create-interview-recruiter')}
+                title={isCollapsed ? 'Create Interview' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Calendar className="w-4 h-4 text-[#606beb] shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Create Interview</span>}
+                </div>
               </button>
             </div>
 
             <div className="space-y-1 pt-3 border-t border-slate-100">
-              <span className="px-3 text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
-                <Sparkles className="w-3 h-3 text-indigo-500" /> Hiring Intelligence
-              </span>
+              {!isCollapsed && (
+                <span className="px-3 text-[10px] font-bold text-indigo-600 uppercase tracking-wider block mb-2 flex items-center gap-1.5">
+                  <Sparkles className="w-3 h-3 text-indigo-500 shrink-0" /> Hiring Intelligence
+                </span>
+              )}
 
-              <button onClick={() => setActiveTab('candidate-intelligence')} className={getNavButtonClass('candidate-intelligence', true)}>
-                <div className="flex items-center gap-3">
-                  <Zap className="w-4 h-4" /> Candidate Intelligence
+              <button
+                onClick={() => setActiveTab('candidate-intelligence')}
+                className={getNavButtonClass('candidate-intelligence', true)}
+                title={isCollapsed ? 'Candidate Intelligence' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Zap className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Candidate Intelligence</span>}
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M13</span>
+                {!isCollapsed && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white shrink-0 ml-auto">
+                    M13
+                  </span>
+                )}
               </button>
 
-              <button onClick={() => setActiveTab('interview-evaluation')} className={getNavButtonClass('interview-evaluation', true)}>
-                <div className="flex items-center gap-3">
-                  <Award className="w-4 h-4" /> Interview Analytics
+              <button
+                onClick={() => setActiveTab('interview-evaluation')}
+                className={getNavButtonClass('interview-evaluation', true)}
+                title={isCollapsed ? 'Interview Analytics' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Award className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Interview Analytics</span>}
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500 text-white">M11</span>
+                {!isCollapsed && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-purple-500 text-white shrink-0 ml-auto">
+                    M11
+                  </span>
+                )}
               </button>
 
-              <button onClick={() => setActiveTab('comparison')} className={getNavButtonClass('comparison', true)}>
-                <div className="flex items-center gap-3">
-                  <BarChart3 className="w-4 h-4" /> Compare Candidates
+              <button
+                onClick={() => setActiveTab('comparison')}
+                className={getNavButtonClass('comparison', true)}
+                title={isCollapsed ? 'Compare Candidates' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <BarChart3 className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">Compare Candidates</span>}
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500 text-white">M16</span>
+                {!isCollapsed && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-500 text-white shrink-0 ml-auto">
+                    M16
+                  </span>
+                )}
               </button>
 
-              <button onClick={() => setActiveTab('assistant')} className={getNavButtonClass('assistant', true)}>
-                <div className="flex items-center gap-3">
-                  <Sparkles className="w-4 h-4" /> AI Assistant
+              <button
+                onClick={() => setActiveTab('assistant')}
+                className={getNavButtonClass('assistant', true)}
+                title={isCollapsed ? 'AI Assistant' : undefined}
+              >
+                <div className="flex items-center gap-3 min-w-0 truncate">
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                  {!isCollapsed && <span className="truncate font-semibold">AI Assistant</span>}
                 </div>
-                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white">M17</span>
+                {!isCollapsed && (
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-600 text-white shrink-0 ml-auto">
+                    M17
+                  </span>
+                )}
               </button>
             </div>
           </>
@@ -248,12 +337,25 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
 
         {isAdmin && (
           <div className="space-y-1">
-            <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">Admin Control</span>
-            <button onClick={() => setActiveTab('admin-dashboard')} className={getNavButtonClass('admin-dashboard')}>
-              <div className="flex items-center gap-3">
-                <LayoutDashboard className="w-4 h-4" /> System Administration
+            {!isCollapsed && (
+              <span className="px-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-2">
+                Admin Control
+              </span>
+            )}
+            <button
+              onClick={() => setActiveTab('admin-dashboard')}
+              className={getNavButtonClass('admin-dashboard')}
+              title={isCollapsed ? 'System Administration' : undefined}
+            >
+              <div className="flex items-center gap-3 min-w-0 truncate">
+                <LayoutDashboard className="w-4 h-4 shrink-0" />
+                {!isCollapsed && <span className="truncate font-semibold">System Administration</span>}
               </div>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-900 text-white">M18</span>
+              {!isCollapsed && (
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-900 text-white shrink-0 ml-auto">
+                  M18
+                </span>
+              )}
             </button>
           </div>
         )}
@@ -261,24 +363,31 @@ function Sidebar({ activeTab, setActiveTab, userRole, setUserRole, onRoleChange 
 
       {/* Footer Settings & Account */}
       <div className="p-3 border-t border-slate-100 space-y-2 bg-slate-50/50">
-        <button onClick={() => setActiveTab('settings')} className={getNavButtonClass('settings')}>
-          <div className="flex items-center gap-3">
-            <Settings className="w-4 h-4" /> System Settings
+        <button
+          onClick={() => setActiveTab('settings')}
+          className={getNavButtonClass('settings')}
+          title={isCollapsed ? 'System Settings' : undefined}
+        >
+          <div className="flex items-center gap-3 min-w-0 truncate">
+            <Settings className="w-4 h-4 shrink-0" />
+            {!isCollapsed && <span className="truncate font-semibold">System Settings</span>}
           </div>
         </button>
 
         <div className="pt-2 flex items-center gap-3 border-t border-slate-200/60 px-1">
-          <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center font-bold text-xs text-white shadow-xs font-outfit">
+          <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center font-bold text-xs text-white shadow-xs font-outfit shrink-0">
             {initials}
           </div>
-          <div className="flex-1 truncate">
-            <span className="text-xs font-bold text-slate-800 block truncate">
-              {currentUser.name}
-            </span>
-            <span className="text-[10px] text-indigo-600 font-semibold block truncate uppercase tracking-wider">
-              {currentUser.role === 'hr' ? 'HR Recruiter' : currentUser.role}
-            </span>
-          </div>
+          {!isCollapsed && (
+            <div className="flex-1 min-w-0 truncate">
+              <span className="text-xs font-bold text-slate-800 block truncate">
+                {currentUser.name}
+              </span>
+              <span className="text-[10px] text-indigo-600 font-semibold block truncate uppercase tracking-wider">
+                {currentUser.role === 'hr' ? 'HR Recruiter' : currentUser.role}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </aside>

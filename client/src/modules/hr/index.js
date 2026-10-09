@@ -12,3 +12,6 @@ export { default as CandidateComparison } from './candidate-intelligence/compone
 
 export { default as AIRecruitmentAssistantIQ } from './assistant/components/AIRecruitmentAssistantIQ';
 export { default as AIRecruitmentAssistant } from './assistant/components/AIRecruitmentAssistant';
+
+export { default as CreateInterviewPage } from './interviews/components/CreateInterviewPage';
+export { default as RecruiterInterviewsPage } from './interviews/components/RecruiterInterviewsPage';

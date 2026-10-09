@@ -89,6 +89,19 @@ const jobSchema = new mongoose.Schema(
       type: String,
       default: ''
     },
+    evaluationConfig: {
+      weights: {
+        requiredSkills: { type: Number, default: 30 },
+        experience: { type: Number, default: 20 },
+        projectRelevance: { type: Number, default: 15 },
+        technicalCompetency: { type: Number, default: 15 },
+        responsibilities: { type: Number, default: 10 },
+        education: { type: Number, default: 5 },
+        impact: { type: Number, default: 5 }
+      },
+      prompt: { type: String, default: '' },
+      version: { type: Number, default: 1 }
+    },
     evaluation: {
       hrPrompt: {
         type: String,
@@ -98,9 +111,46 @@ const jobSchema = new mongoose.Schema(
     keywords: {
       type: [String],
       default: []
-    }
+    },
+    closingDate: {
+      type: Date,
+      default: null
+    },
+    workArrangement: {
+      type: String,
+      enum: ['Hybrid', 'Remote', 'On-site'],
+      default: 'Hybrid'
+    },
+    seniorityLevel: {
+      type: String,
+      default: 'Mid-Senior level'
+    },
+    responsibilities: {
+      type: String,
+      default: ''
+    },
+    qualifications: {
+      type: String,
+      default: ''
+    },
+    history: [
+      {
+        action: { type: String, required: true },
+        timestamp: { type: Date, default: Date.now },
+        actor: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+        actorName: { type: String, default: 'System' },
+        details: { type: String, default: '' }
+      }
+    ]
   },
   { timestamps: true }
 );
 
+// Database Indexes for Efficient Operational Queries
+jobSchema.index({ recruiter: 1, status: 1 });
+jobSchema.index({ status: 1, closingDate: 1 });
+jobSchema.index({ recruiter: 1, createdAt: -1 });
+jobSchema.index({ recruiter: 1, department: 1, employmentType: 1 });
+
 module.exports = mongoose.model('Job', jobSchema);
+

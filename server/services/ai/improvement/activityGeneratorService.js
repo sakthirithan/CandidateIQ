@@ -163,6 +163,27 @@ async function generateActivitiesForInterview(interview) {
     });
   }
 
+  // 6. High Performing Candidate Reinforcement Activity
+  if (overallScore >= 85 || activities.length === 0) {
+    activities.push({
+      category: 'technical',
+      skill: 'advanced_architecture',
+      title: `Advanced ${jobTitle} System Architecture Mastery`,
+      detectedIssue: `Strong overall performance (${overallScore}/100) demonstrated across evaluation dimensions.`,
+      rootCause: 'High core competency achieved. Practice focused on senior architectural trade-offs and resilience.',
+      solutionDescription: 'Apply the C-E-E-T Framework to explain multi-region database replication, caching invalidation, and zero-downtime deployment pipelines.',
+      recommendedFramework: 'CEET',
+      practiceType: 'voice',
+      durationMinutes: 5,
+      priority: 'LOW',
+      targetMetricName: 'technicalScore',
+      unit: 'score (0-100)',
+      comparisonOperator: '>=',
+      baselineValue: techScore,
+      targetValue: Math.min(100, techScore + 10)
+    });
+  }
+
   // Cap activities between 3 and 5
   return activities.slice(0, 5);
 }

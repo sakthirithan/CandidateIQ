@@ -27,3 +27,14 @@ All modifications to files in `shared/` / `common/` must be logged here to prese
 - **Existing Behavior**: Components sat in legacy flat folders.
 - **New Behavior**: Components physically reside in `client/src/modules/shared/` with clean barrel exports.
 - **Validation**: Verified with `npm run build` in `client/` (0 errors, 2641 modules compiled).
+
+### Date: 2026-10-09
+- **Agent/Developer**: Antigravity Assistant
+- **Shared Element**: `Sidebar.jsx` (`client/src/modules/shared/layout/components/Sidebar.jsx`)
+- **File**: `client/src/modules/shared/layout/components/Sidebar.jsx`
+- **Change Description**: Fixed navigation item flex layout, label text truncation (`min-w-0 flex-1 truncate`), shrink-0 right-aligned route badges (`M14`, `M15`, etc.), minimum button height (`min-h-[44px]`), and collapsed icon tooltips.
+- **Reason**: Addressed layout wrapping issues on long labels such as "Applications & Candidates" and badge overlap.
+- **Consumers**: HR Recruiter, Candidate, and Admin navigation sidebar.
+- **Existing Behavior**: Sidebar navigation labels wrapped onto two lines when badges competed for space.
+- **New Behavior**: Sidebar navigation labels stay cleanly on one line with right-aligned badges and tooltips when collapsed.
+- **Validation**: Verified with `npm run build` in `client/` (0 errors).

@@ -3,11 +3,54 @@ const MockInterviewWorkspace = require('../models/MockInterviewWorkspace');
 const Resume = require('../models/Resume');
 const Job = require('../models/Job');
 const User = require('../models/User');
+const ImprovementActivity = require('../models/ImprovementActivity');
 const GenerateQuestionsService = require('../services/ai/mockInterview/generateQuestionsService');
 const InterviewFinalEvaluator = require('../services/interview/InterviewFinalEvaluator');
 const { ConfigurationInputSchema } = require('../services/ai/mockInterview/mockInterviewSchemas');
 const { GENERATION_STAGES } = require('../services/ai/mockInterview/generationStages');
 const progressEmitter = require('../services/ai/mockInterview/generationProgressEmitter');
+
+/**
+ * Helper to ensure at least 1 actionable Improvement Activity is generated and persisted for a completed interview.
+ * Idempotent: Does not create duplicates if activities already exist for this interview.
+ */
+const ensureActivitiesForInterview = async (interview) => {
+  try {
+    if (!interview || !interview._id) return [];
+
+    const existing = await ImprovementActivity.find({ sourceInterviewId: interview._id });
+    if (existing && existing.length > 0) {
+      return existing;
+    }
+
+    if (!interview.evaluation && !interview.overallEvaluation) {
+      return [];
+    }
+
+    const userId = interview.candidate || interview.candidateIdString;
+    if (!userId) return [];
+
+    const { generateActivitiesForInterview } = require('../services/ai/improvement/activityGeneratorService');
+    const activitySpecs = await generateActivitiesForInterview(interview);
+
+    const createdActivities = [];
+    for (const spec of activitySpecs) {
+      const act = await ImprovementActivity.create({
+        userId,
+        sourceInterviewId: interview._id,
+        ...spec,
+        latestValue: spec.baselineValue,
+        bestValue: spec.baselineValue,
+        status: 'PENDING'
+      });
+      createdActivities.push(act);
+    }
+    return createdActivities;
+  } catch (err) {
+    console.error('[ensureActivitiesForInterview] Error generating activities:', err.message);
+    return [];
+  }
+};
 
 /**
  * Mock Interview Controller for CandidateIQ
@@ -599,10 +642,14 @@ const completeMockInterview = async (req, res, next) => {
       }
     }
 
+    // Automatically generate/ensure linked Improvement Activities for this completed interview
+    const activities = await ensureActivitiesForInterview(interview);
+
     return res.status(200).json({
       success: true,
       message: 'Mock Interview completed and workspace updated.',
       evaluation,
+      activities,
       interview
     });
   } catch (error) {
@@ -663,9 +710,13 @@ const evaluateMockInterviewController = async (req, res, next) => {
     const { evaluateMockInterview } = require('../services/ai/mockInterview/mockInterviewEvaluator');
     const evaluation = await evaluateMockInterview(interview, Boolean(force));
 
+    // Automatically generate/ensure linked Improvement Activities for this evaluated interview
+    const activities = await ensureActivitiesForInterview(interview);
+
     return res.status(200).json({
       success: true,
       evaluation,
+      activities,
       interview
     });
   } catch (error) {
@@ -1065,7 +1116,8 @@ module.exports = {
   getMockInterviewReview,
   getMockInterviewImprovementPlan,
   getMockInterviewConsistency,
-  getMockInterviewAdaptiveContext
+  getMockInterviewAdaptiveContext,
+  ensureActivitiesForInterview
 };
 
 

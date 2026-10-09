@@ -69,27 +69,6 @@ function LoginModal({ isOpen, onClose, onLoginSuccess, onSwitchToRegister, onSwi
           <p className="text-xs text-slate-500">Sign in to access your CandidateIQ workspace.</p>
         </div>
 
-        {/* Quick Demo Sign-in Pills */}
-        <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Quick 1-Click Demo Login</span>
-          <div className="grid grid-cols-2 gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('candidate.demo@candidateiq.com', 'password123')}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-500 text-slate-700 hover:text-indigo-600 font-semibold text-left transition-all flex items-center gap-1.5"
-            >
-              <User className="w-3.5 h-3.5 text-indigo-600" /> Candidate Demo
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickLogin('recruiter.demo@candidateiq.com', 'password123')}
-              className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 hover:border-indigo-500 text-slate-700 hover:text-indigo-600 font-semibold text-left transition-all flex items-center gap-1.5"
-            >
-              <Briefcase className="w-3.5 h-3.5 text-indigo-600" /> Recruiter Demo
-            </button>
-          </div>
-        </div>
-
         {error && (
           <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-center gap-2">
             <AlertCircle className="w-4 h-4 shrink-0" />

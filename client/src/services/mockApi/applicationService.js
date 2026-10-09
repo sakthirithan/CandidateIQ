@@ -1,19 +1,84 @@
 import { storageApplications, storageInterviews } from '../storage/storageService';
+import api from '../api';
 
 export const mockApplicationService = {
   getApplications: async () => {
-    await new Promise((r) => setTimeout(r, 100));
+    try {
+      const res = await api.get('/jobs/recruiter/applications').catch(() => null);
+      if (res?.data?.applications && res.data.applications.length > 0) {
+        const backendMapped = res.data.applications.map((app) => {
+          const j = app.job || {};
+          return {
+            id: app._id || app.id,
+            _id: app._id || app.id,
+            jobId: j._id || j.id || app.jobIdString || 'job_1',
+            jobTitle: j.title || app.jobTitle || 'Requisition Role',
+            company: j.company || app.company || 'CandidateIQ Talent Partner',
+            candidateId: app.candidate?._id || app.candidate || app.candidateId || 'cand_1',
+            candidateName: app.candidateSnapshot?.name || app.candidate?.name || 'Alex Johnson',
+            candidateEmail: app.candidateSnapshot?.email || app.candidate?.email || 'alex@example.com',
+            appliedDate: app.createdAt ? new Date(app.createdAt).toISOString().split('T')[0] : app.appliedDate || new Date().toISOString().split('T')[0],
+            createdAt: app.createdAt || new Date().toISOString(),
+            status: (app.status || 'applied').replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+            rawStatus: app.status,
+            matchPercentage: app.overallScore || app.matchAnalysis?.overallMatch || 88,
+            iqScore: app.overallScore || 85,
+            resumeId: app.resumeSnapshot?.resumeId,
+            candidateProfileSnapshot: app.candidateProfile || null,
+            job: j
+          };
+        });
+        const localList = storageApplications.getAll() || [];
+        const localIds = new Set(backendMapped.map((b) => String(b.id)));
+        const extraLocal = localList.filter((l) => !localIds.has(String(l.id)));
+        return [...backendMapped, ...extraLocal];
+      }
+    } catch (e) {
+      console.warn('API applications fetch fallback to storage:', e);
+    }
     return storageApplications.getAll();
   },
 
-  getApplicationsForCandidate: async (candidateId) => {
-    await new Promise((r) => setTimeout(r, 100));
+  getApplicationsForCandidate: async (candidateId = 'cand_1') => {
+    try {
+      const res = await api.get('/jobs/candidate/my-applications').catch(() => null);
+      if (res?.data?.applications && res.data.applications.length > 0) {
+        const backendMapped = res.data.applications.map((app) => {
+          const j = app.job || {};
+          return {
+            id: app._id || app.id,
+            _id: app._id || app.id,
+            jobId: j._id || j.id || app.jobIdString || 'job_1',
+            jobTitle: j.title || app.jobTitle || 'Requisition Role',
+            company: j.company || app.company || 'CandidateIQ Talent Partner',
+            candidateId: app.candidate?._id || app.candidate || candidateId,
+            candidateName: app.candidateSnapshot?.name || 'Alex Johnson',
+            candidateEmail: app.candidateSnapshot?.email || 'alex@example.com',
+            appliedDate: app.createdAt ? new Date(app.createdAt).toISOString().split('T')[0] : app.appliedDate || new Date().toISOString().split('T')[0],
+            createdAt: app.createdAt || new Date().toISOString(),
+            status: (app.status || 'applied').replace('_', ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+            rawStatus: app.status,
+            matchPercentage: app.overallScore || app.matchAnalysis?.overallMatch || 88,
+            iqScore: app.overallScore || 85,
+            resumeId: app.resumeSnapshot?.resumeId,
+            candidateProfileSnapshot: app.candidateProfile || null,
+            job: j
+          };
+        });
+        const localList = storageApplications.getByCandidateId(candidateId) || [];
+        const localIds = new Set(backendMapped.map((b) => String(b.id)));
+        const extraLocal = localList.filter((l) => !localIds.has(String(l.id)));
+        return [...backendMapped, ...extraLocal];
+      }
+    } catch (e) {
+      console.warn('API my-applications fetch fallback to storage:', e);
+    }
     return storageApplications.getByCandidateId(candidateId);
   },
 
   getCandidateStateForJob: async (candidateId, jobId) => {
-    await new Promise((r) => setTimeout(r, 50));
-    const app = storageApplications.getByCandidateAndJob(candidateId, jobId);
+    const apps = await mockApplicationService.getApplicationsForCandidate(candidateId);
+    const app = apps.find((a) => String(a.jobId) === String(jobId) || String(a.job?._id || a.job?.id) === String(jobId));
     if (!app) {
       return {
         isApplied: false,
@@ -24,16 +89,14 @@ export const mockApplicationService = {
     }
     return {
       isApplied: true,
-      applicationId: app.id,
+      applicationId: app.id || app._id,
       appliedAt: app.appliedDate || app.createdAt,
       status: app.status || 'Applied'
     };
   },
 
-  applyForJob: async ({ jobId, candidateId, jobTitle, company, candidateName, candidateEmail, matchPercentage, iqScore, resumeId, candidateProfileSnapshot }) => {
-    await new Promise((r) => setTimeout(r, 200));
-
-    // Check duplicate application for candidateId + jobId
+  applyForJob: async ({ jobId, candidateId, jobTitle, company, candidateName, candidateEmail, matchPercentage, iqScore, resumeId, candidateProfileSnapshot, ...formExtra }) => {
+    // Check duplicate local storage first
     const existing = storageApplications.getByCandidateAndJob(candidateId, jobId);
     if (existing) {
       const err = new Error('You have already applied for this job position.');
@@ -42,8 +105,52 @@ export const mockApplicationService = {
       throw err;
     }
 
+    // Attempt backend API submission
+    let apiCreatedApp = null;
+    try {
+      const payload = {
+        resumeSnapshot: {
+          resumeId: resumeId || `res_${Date.now()}`,
+          fileName: 'Candidate_Resume.pdf'
+        },
+        candidateSnapshot: {
+          name: candidateName || formExtra.firstName ? `${formExtra.firstName} ${formExtra.lastName || ''}`.trim() : 'Alex Johnson',
+          email: candidateEmail || formExtra.email || 'alex@example.com',
+          mobile: formExtra.mobile || '',
+          location: formExtra.location || 'Remote',
+          gender: formExtra.gender || 'Not Specified'
+        },
+        professionalSnapshot: {
+          userType: formExtra.userType || 'Professional',
+          designation: formExtra.designation || 'Software Developer',
+          experience: formExtra.experience || '2 Years',
+          organization: formExtra.organization || 'Tech Partner',
+          skills: (formExtra.skills || 'React, Node.js, JavaScript, MongoDB').split(',').map((s) => s.trim())
+        },
+        expectedCompensation: {
+          amount: formExtra.expectedAmount || 700000,
+          currency: formExtra.expectedCurrency || 'INR',
+          period: formExtra.expectedPeriod || 'year',
+          formatted: `${formExtra.expectedAmount || 700000} ${formExtra.expectedCurrency || 'INR'}`
+        },
+        screeningAnswers: [
+          { questionId: 'q1', question: 'Notice Period', answer: formExtra.noticePeriodAnswer || 'Immediate' },
+          { questionId: 'q2', question: 'Why fit for this position?', answer: formExtra.whyFitAnswer || 'Strong technical experience' }
+        ],
+        termsAccepted: true
+      };
+
+      const res = await api.post(`/jobs/${jobId}/apply`, payload).catch(() => null);
+      if (res?.data?.application) {
+        apiCreatedApp = res.data.application;
+      }
+    } catch (e) {
+      console.warn('Backend applyToJob failed/fallback to storage:', e);
+    }
+
     const newApp = {
-      id: `app_${Date.now()}`,
+      id: apiCreatedApp?._id || `app_${Date.now()}`,
+      _id: apiCreatedApp?._id || `app_${Date.now()}`,
       jobId: jobId || 'job_1',
       jobTitle: jobTitle || 'Target Requisition',
       company: company || 'CandidateIQ Enterprise',
@@ -65,15 +172,20 @@ export const mockApplicationService = {
         { step: 'Final Offer Decision', date: 'Pending', done: false }
       ]
     };
+
     return storageApplications.saveApplication(newApp);
   },
 
   updateApplicationStatus: async (appId, status) => {
-    await new Promise((r) => setTimeout(r, 150));
+    try {
+      const dbStatus = status.toLowerCase().replace(' ', '_');
+      await api.patch(`/jobs/applications/${appId}/status`, { status: dbStatus }).catch(() => null);
+    } catch (e) {
+      console.warn('Backend updateApplicationStatus failed/fallback to storage:', e);
+    }
     return storageApplications.updateStatus(appId, status);
   },
 
-  // Recruiter Schedule HR or Job Interview for Shortlisted Candidate(s)
   scheduleHRInterview: async ({
     candidateId,
     candidateIds = [],
@@ -83,7 +195,7 @@ export const mockApplicationService = {
     jobTitle,
     company,
     title,
-    type = 'HR', // 'HR' or 'FINAL'
+    type = 'HR',
     scheduledDate,
     scheduledTime,
     duration = '2 Hours',
@@ -96,13 +208,23 @@ export const mockApplicationService = {
     questionBankSnapshot = null,
     evaluationPromptSnapshot = null
   }) => {
-    await new Promise((r) => setTimeout(r, 200));
-    
-    const apps = storageApplications.getAll();
     const primaryCandId = candidateId || (candidateIds.length > 0 ? candidateIds[0] : 'cand_1');
-    const app = apps.find(a => a.candidateId === primaryCandId || a.candidateName === candidateName || a.jobId === jobId);
 
-    // Calculate Start Time and End Time ISO
+    // Attempt backend interview creation
+    try {
+      const payload = {
+        candidateId: primaryCandId,
+        jobId: jobId || 'job_1',
+        scheduledDate: scheduledDate ? `${scheduledDate}T10:00:00.000Z` : new Date(Date.now() + 86400000 * 2).toISOString(),
+        interviewType: type.toUpperCase() === 'FINAL' ? 'technical' : 'hr',
+        notes: instructions || title || 'Recruiter Candidate Screening Interview'
+      };
+      await api.post('/interviews/schedule', payload).catch(() => null);
+    } catch (e) {
+      console.warn('Backend scheduleInterview failed/fallback to storage:', e);
+    }
+
+    const apps = storageApplications.getAll();
     const dateStr = scheduledDate || new Date().toISOString().split('T')[0];
     const timeStr = scheduledTime || '10:00 AM';
     let [time, modifier] = timeStr.split(' ');
@@ -124,7 +246,6 @@ export const mockApplicationService = {
     }
     const end = new Date(start.getTime() + durMs);
 
-    // Default Question Bank Snapshot if not provided
     const defaultQB = questionBankSnapshot || {
       questionBankId: `qb_${Date.now()}`,
       jobId: jobId || 'job_1',
@@ -155,7 +276,6 @@ export const mockApplicationService = {
       ]
     };
 
-    // Default Evaluation Prompt Snapshot
     const defaultPrompt = evaluationPromptSnapshot || {
       promptId: `ep_${Date.now()}`,
       prompt: 'Evaluate candidate responses based on technical correctness, relevance to expected reference answers, clarity, and practical system engineering understanding.'
@@ -194,9 +314,8 @@ export const mockApplicationService = {
 
     const saved = storageInterviews.saveInterview(newInterview);
 
-    // Update application status for target candidate(s)
-    targetCandidateIds.forEach(cId => {
-      const candidateApp = apps.find(a => a.candidateId === cId || a.jobId === jobId);
+    targetCandidateIds.forEach((cId) => {
+      const candidateApp = apps.find((a) => a.candidateId === cId || a.jobId === jobId);
       if (candidateApp) {
         storageApplications.updateStatus(candidateApp.id, 'Interview');
       }
@@ -205,10 +324,42 @@ export const mockApplicationService = {
     return saved;
   },
 
-  // Get HR & Final assigned interviews for candidate
   getHRInterviewsForCandidate: async (candidateId = 'cand_1') => {
-    await new Promise((r) => setTimeout(r, 100));
+    try {
+      const res = await api.get('/interviews/candidate').catch(() => null);
+      if (res?.data?.interviews && res.data.interviews.length > 0) {
+        const backendMapped = res.data.interviews.map((inv) => {
+          const j = inv.job || {};
+          const isJobType = inv.interviewType === 'technical' || inv.interviewType === 'mixed' || inv.questionSource === 'recruiter_job';
+          const scheduledDateStr = inv.scheduledDate ? new Date(inv.scheduledDate).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+          const scheduledTimeStr = inv.scheduledDate ? new Date(inv.scheduledDate).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : '10:00 AM';
+
+          return {
+            id: inv._id || inv.id,
+            _id: inv._id || inv.id,
+            candidateId: inv.candidate?._id || inv.candidate || candidateId,
+            jobId: j._id || j.id || inv.jobIdString || 'job_1',
+            jobTitle: j.title || inv.jobTitle || 'Target Requisition',
+            company: j.company || inv.company || 'CandidateIQ Talent Partner',
+            title: inv.notes || `${j.title || 'Role'} — ${isJobType ? 'Job Interview' : 'HR Interview'}`,
+            type: isJobType ? 'FINAL' : 'HR',
+            scheduledDate: scheduledDateStr,
+            scheduledTime: scheduledTimeStr,
+            duration: inv.duration || '2 Hours',
+            interviewer: inv.notes ? inv.notes.split('—')[0] || 'Recruiter Committee' : 'Recruiter Committee',
+            instructions: inv.hrEvaluationPrompt || inv.notes || 'Please join the virtual interview room within the scheduled window.',
+            status: inv.status === 'completed' ? 'Completed' : (inv.status === 'cancelled' ? 'Cancelled' : 'Scheduled'),
+            candidateAttempts: inv.status === 'completed' ? [{ candidateId, status: 'COMPLETED' }] : []
+          };
+        });
+        const localList = storageInterviews.getByCandidateId(candidateId) || [];
+        const localIds = new Set(backendMapped.map((b) => String(b.id)));
+        const extraLocal = localList.filter((l) => !localIds.has(String(l.id)));
+        return [...backendMapped, ...extraLocal];
+      }
+    } catch (e) {
+      console.warn('API candidate interviews fetch fallback to storage:', e);
+    }
     return storageInterviews.getByCandidateId(candidateId);
   }
 };
-

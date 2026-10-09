@@ -3,10 +3,12 @@ const CandidateProfile = require('../models/CandidateProfile');
 const Job = require('../models/Job');
 const Application = require('../models/Application');
 const Resume = require('../models/Resume');
+const User = require('../models/User');
 const { normalizeKeywords } = require('../utils/keywordNormalizer');
 const aiService = require('../services/aiService');
 const interviewAIService = require('../ai/services/interviewAIService');
 const evaluationAIService = require('../ai/services/evaluationAIService');
+const { sendInterviewInvitationEmail } = require('../services/emailService');
 
 // @desc    Start a dynamic mock interview session based EXCLUSIVELY on candidate resume keywords
 // @route   POST /api/interviews/start
@@ -123,7 +125,22 @@ const startInterview = async (req, res, next) => {
 // @access  Private (Recruiter/Admin)
 const scheduleInterview = async (req, res, next) => {
   try {
-    const { candidateId, jobId, scheduledDate, interviewType = 'hr', notes } = req.body;
+    const {
+      candidateId,
+      jobId,
+      applicationId,
+      roundType = 'technical',
+      title = 'Technical Interview',
+      scheduledDate,
+      scheduledTime = '10:00',
+      timeZone = 'IST (UTC+5:30)',
+      durationMinutes = 60,
+      candidateInstructions,
+      internalNotes,
+      interviewers = [],
+      rubricSnapshot,
+      selectedQuestions = []
+    } = req.body;
 
     if (!candidateId || !jobId) {
       return res.status(400).json({ success: false, message: 'Candidate ID and Job ID are required.' });
@@ -134,7 +151,26 @@ const scheduleInterview = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Job posting not found.' });
     }
 
-    const hrPromptText = job.hrEvaluationPrompt || job.evaluation?.hrPrompt || 'Evaluate based on technical proficiency and communication.';
+    const candidateUser = await User.findById(candidateId);
+    if (!candidateUser) {
+      return res.status(404).json({ success: false, message: 'Candidate user record not found.' });
+    }
+
+    // Validate Rubric Weights if provided
+    if (rubricSnapshot && Array.isArray(rubricSnapshot.criteria) && rubricSnapshot.criteria.length > 0) {
+      const totalWeight = rubricSnapshot.criteria.reduce((sum, c) => sum + Number(c.weight || 0), 0);
+      if (Math.abs(totalWeight - 100) > 0.01) {
+        return res.status(400).json({
+          success: false,
+          message: `Evaluation rubric weights must total exactly 100%. Provided total: ${totalWeight}%.`
+        });
+      }
+    }
+
+    const roomId = `candidateiq_int_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:3000';
+
+    const hrPromptText = job.hrEvaluationPrompt || job.evaluation?.hrPrompt || 'Evaluate candidate based on role requirements.';
 
     const interview = await Interview.create({
       candidate: candidateId,
@@ -142,15 +178,63 @@ const scheduleInterview = async (req, res, next) => {
       job: jobId,
       jobIdString: jobId.toString(),
       jobTitle: job.title,
+      application: applicationId || null,
+      applicationIdString: applicationId ? applicationId.toString() : '',
       interviewCategory: 'actual',
       questionSource: 'recruiter_job',
+      roundType,
+      title: title || `${roundType.toUpperCase()} Interview`,
       hrEvaluationPrompt: hrPromptText,
-      interviewType: ['technical', 'behavioural', 'mixed', 'hr'].includes(interviewType) ? interviewType : 'hr',
+      interviewType: roundType === 'hr_screening' ? 'hr' : 'technical',
       difficulty: 'Mid-Level',
       status: 'scheduled',
       scheduledDate: scheduledDate ? new Date(scheduledDate) : new Date(Date.now() + 86400000 * 2),
-      notes: notes || 'Recruiter Candidate Screening Interview'
+      timeZone,
+      durationMinutes,
+      candidateInstructions: candidateInstructions || 'Please arrive 5 minutes prior to the start time with your camera and microphone enabled.',
+      internalNotes: internalNotes || '',
+      interviewers: Array.isArray(interviewers) && interviewers.length > 0 ? interviewers : [
+        {
+          user: req.user?._id || req.user?.id,
+          name: req.user?.name || 'Primary Recruiter',
+          email: req.user?.email || '',
+          role: 'Primary Interviewer',
+          isPrimary: true
+        }
+      ],
+      rubricSnapshot: rubricSnapshot || null,
+      selectedQuestions: Array.isArray(selectedQuestions) ? selectedQuestions : [],
+      meetingProvider: 'jitsi',
+      meetingRoomReference: roomId,
+      meetingConfigurationStatus: 'configured',
+      invitationDeliveryStatus: 'pending',
+      createdBy: req.user?._id || req.user?.id
     });
+
+    // Send Resend Email Notification
+    const meetingUrl = `${appBaseUrl}/job-interview/${interview._id}/instructions`;
+    const emailResult = await sendInterviewInvitationEmail({
+      candidateName: candidateUser.name,
+      candidateEmail: candidateUser.email,
+      jobTitle: job.title,
+      companyName: job.company || 'CandidateIQ Hiring Partner',
+      roundTitle: title || 'Technical Interview',
+      scheduledDate: scheduledDate ? new Date(scheduledDate).toLocaleDateString() : 'Upcoming',
+      scheduledTime,
+      timeZone,
+      durationMinutes,
+      meetingUrl,
+      candidateInstructions: interview.candidateInstructions
+    });
+
+    if (emailResult.success) {
+      interview.invitationDeliveryStatus = 'sent';
+      interview.invitationProviderMessageId = emailResult.messageId || `msg_${Date.now()}`;
+      await interview.save();
+    } else {
+      interview.invitationDeliveryStatus = 'failed';
+      await interview.save();
+    }
 
     // Automatically update Application status to interview_scheduled if application exists
     await Application.findOneAndUpdate(
@@ -160,13 +244,13 @@ const scheduleInterview = async (req, res, next) => {
 
     const populatedInterview = await Interview.findById(interview._id)
       .populate('candidate', 'name email role')
-      .populate('job', 'title department location');
+      .populate('job', 'title department location company');
 
     return res.status(201).json({
       operation: 'actual_interview_schedule',
       status: 'success',
       success: true,
-      message: 'Actual Recruiter Interview scheduled successfully.',
+      message: 'Official recruiter interview scheduled successfully.',
       interview: populatedInterview
     });
   } catch (error) {
@@ -192,7 +276,7 @@ const getRecruiterInterviews = async (req, res, next) => {
 
     const interviews = await Interview.find(query)
       .populate('candidate', 'name email role')
-      .populate('job', 'title department location')
+      .populate('job', 'title department location company')
       .sort({ scheduledDate: 1, createdAt: -1 });
 
     return res.status(200).json({ success: true, count: interviews.length, interviews });
@@ -200,6 +284,7 @@ const getRecruiterInterviews = async (req, res, next) => {
     next(error);
   }
 };
+
 
 // @desc    Submit candidate response for single question & run evaluation
 // @route   POST /api/interviews/:id/answer
@@ -403,6 +488,124 @@ const getCandidateInterviews = async (req, res, next) => {
   }
 };
 
+// @desc    Submit evaluation ratings & recommendations for official HR/Technical Interview
+// @route   POST /api/interviews/:id/evaluate
+// @access  Private (Recruiter/Admin)
+const evaluateOfficialInterview = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { overallScore = 85, recommendation = 'Hire', evaluatorNotes = '', criteriaRatings = [] } = req.body;
+
+    const interview = await Interview.findById(id);
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview session not found.' });
+    }
+
+    const evaluationResult = {
+      overallScore: Number(overallScore) || 85,
+      recommendation,
+      evaluatorNotes,
+      criteriaRatings: Array.isArray(criteriaRatings) ? criteriaRatings : [],
+      evaluatedAt: new Date(),
+      evaluatorName: req.user?.name || 'HR Evaluator'
+    };
+
+    interview.status = 'completed';
+    interview.completedAt = new Date();
+    interview.evaluationResult = evaluationResult;
+    interview.evaluation = evaluationResult;
+    await interview.save();
+
+    if (interview.candidate && interview.job) {
+      await Application.findOneAndUpdate(
+        { candidate: interview.candidate, job: interview.job },
+        { status: 'under_review' }
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Interview evaluation recorded and saved successfully.',
+      interview
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Reschedule an official video interview
+// @route   PUT /api/interviews/:id/reschedule
+// @access  Private (Recruiter/Admin)
+const rescheduleInterview = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { scheduledDate, scheduledTime, durationMinutes, timeZone, reason } = req.body;
+
+    const interview = await Interview.findById(id).populate('candidate', 'name email');
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview record not found.' });
+    }
+
+    if (scheduledDate) {
+      interview.scheduledDate = new Date(scheduledDate);
+    }
+    if (timeZone) interview.timeZone = timeZone;
+    if (durationMinutes) interview.durationMinutes = durationMinutes;
+    interview.status = 'scheduled';
+    if (reason) {
+      interview.internalNotes = (interview.internalNotes ? interview.internalNotes + '\n' : '') + `[Rescheduled]: ${reason}`;
+    }
+
+    await interview.save();
+
+    const populated = await Interview.findById(id)
+      .populate('candidate', 'name email role')
+      .populate('job', 'title department location company');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Interview rescheduled successfully.',
+      interview: populated
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @desc    Cancel an official video interview
+// @route   PUT /api/interviews/:id/cancel
+// @access  Private (Recruiter/Admin)
+const cancelInterview = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { cancellationReason } = req.body;
+
+    const interview = await Interview.findById(id);
+    if (!interview) {
+      return res.status(404).json({ success: false, message: 'Interview record not found.' });
+    }
+
+    interview.status = 'cancelled';
+    if (cancellationReason) {
+      interview.internalNotes = (interview.internalNotes ? interview.internalNotes + '\n' : '') + `[Cancelled]: ${cancellationReason}`;
+    }
+
+    await interview.save();
+
+    const populated = await Interview.findById(id)
+      .populate('candidate', 'name email role')
+      .populate('job', 'title department location company');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Interview cancelled successfully.',
+      interview: populated
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   startInterview,
   scheduleInterview,
@@ -410,5 +613,9 @@ module.exports = {
   getCandidateInterviews,
   submitAnswer,
   completeInterview,
-  getInterviewById
+  evaluateOfficialInterview,
+  getInterviewById,
+  rescheduleInterview,
+  cancelInterview
 };
+

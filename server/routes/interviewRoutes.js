@@ -7,7 +7,10 @@ const {
   getCandidateInterviews,
   submitAnswer,
   completeInterview,
-  getInterviewById
+  evaluateOfficialInterview,
+  getInterviewById,
+  rescheduleInterview,
+  cancelInterview
 } = require('../controllers/interviewController');
 const { protect, authorize } = require('../middleware/authMiddleware');
 
@@ -17,6 +20,9 @@ router.get('/recruiter', protect, authorize('hr', 'recruiter', 'admin'), getRecr
 router.get('/candidate', protect, getCandidateInterviews);
 router.post('/:id/answer', protect, submitAnswer);
 router.post('/:id/complete', protect, completeInterview);
+router.post('/:id/evaluate', protect, authorize('hr', 'recruiter', 'admin'), evaluateOfficialInterview);
+router.put('/:id/reschedule', protect, authorize('hr', 'recruiter', 'admin'), rescheduleInterview);
+router.put('/:id/cancel', protect, authorize('hr', 'recruiter', 'admin'), cancelInterview);
 router.get('/:id', protect, getInterviewById);
 
 module.exports = router;

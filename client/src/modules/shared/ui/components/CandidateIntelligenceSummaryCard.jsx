@@ -2,18 +2,19 @@ import React from 'react';
 import { Award, FileText, CheckCircle2, ShieldCheck, ArrowRight, Brain } from 'lucide-react';
 
 export default function CandidateIntelligenceSummaryCard({
-  candidateName = 'Sakthi M',
-  headline = 'Senior Full Stack & AI Architect',
-  candidateIQScore = 84,
-  resumeMatchPct = 88,
-  interviewEvidencePct = 81,
-  skillCoveragePct = 76,
+  candidateName = 'Candidate',
+  headline = 'CandidateIQ Member',
+  candidateIQScore = null,
+  resumeMatchPct = null,
+  interviewEvidencePct = null,
+  skillCoveragePct = null,
+  isVerified = false,
   triangulationCounts = {
-    supported: 12,
-    partial: 4,
-    unsupported: 2,
-    contradicted: 1,
-    notTested: 3
+    supported: 0,
+    partial: 0,
+    unsupported: 0,
+    contradicted: 0,
+    notTested: 0
   },
   onViewIntelligence
 }) {
@@ -33,9 +34,11 @@ export default function CandidateIntelligenceSummaryCard({
               <h2 className="font-extrabold text-base md:text-xl font-outfit text-white tracking-tight">
                 {candidateName}
               </h2>
-              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#d5faf1] text-[#254d4a] border border-emerald-300 flex items-center gap-1 shadow-2xs">
-                <ShieldCheck className="w-3 h-3 text-[#254d4a]" /> VERIFIED PROFILE
-              </span>
+              {isVerified && (
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-[#d5faf1] text-[#254d4a] border border-emerald-300 flex items-center gap-1 shadow-2xs">
+                  <ShieldCheck className="w-3 h-3 text-[#254d4a]" /> VERIFIED PROFILE
+                </span>
+              )}
             </div>
             <p className="text-xs text-white/95 font-semibold">{headline}</p>
           </div>
@@ -45,7 +48,9 @@ export default function CandidateIntelligenceSummaryCard({
         <div className="flex items-center gap-3 bg-white/15 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/20 shadow-sm">
           <div className="text-right">
             <span className="text-[10px] text-white/95 font-bold uppercase tracking-wider block">Candidate IQ</span>
-            <span className="text-2xl font-black font-outfit text-white leading-none">{candidateIQScore}</span>
+            <span className="text-2xl font-black font-outfit text-white leading-none">
+              {candidateIQScore !== null && candidateIQScore !== undefined ? candidateIQScore : 'N/A'}
+            </span>
           </div>
           <div className="w-10 h-10 rounded-full bg-white text-[#606beb] flex items-center justify-center font-black text-xs shadow-sm">
             <Award className="w-5 h-5 text-[#606beb]" />
@@ -56,18 +61,24 @@ export default function CandidateIntelligenceSummaryCard({
       {/* Metrics Row */}
       <div className="grid grid-cols-3 gap-3 mt-4 pt-3 border-t border-white/20 text-xs">
         <div className="bg-white/10 backdrop-blur-sm p-2.5 rounded-xl border border-white/15">
-          <span className="text-[10px] text-white/95 font-bold block uppercase">Resume Match</span>
-          <span className="font-extrabold text-white text-sm">{resumeMatchPct}%</span>
+          <span className="text-[10px] text-white/95 font-bold block uppercase">Resume Quality</span>
+          <span className="font-extrabold text-white text-sm">
+            {resumeMatchPct !== null && resumeMatchPct !== undefined ? `${resumeMatchPct}%` : 'Pending'}
+          </span>
         </div>
 
         <div className="bg-white/10 backdrop-blur-sm p-2.5 rounded-xl border border-white/15">
-          <span className="text-[10px] text-white/95 font-bold block uppercase">Interview Evidence</span>
-          <span className="font-extrabold text-white text-sm">{interviewEvidencePct}%</span>
+          <span className="text-[10px] text-white/95 font-bold block uppercase">Interview Score</span>
+          <span className="font-extrabold text-white text-sm">
+            {interviewEvidencePct !== null && interviewEvidencePct !== undefined ? `${interviewEvidencePct}%` : 'N/A'}
+          </span>
         </div>
 
         <div className="bg-white/10 backdrop-blur-sm p-2.5 rounded-xl border border-white/15">
           <span className="text-[10px] text-white/95 font-bold block uppercase">Skill Coverage</span>
-          <span className="font-extrabold text-white text-sm">{skillCoveragePct}%</span>
+          <span className="font-extrabold text-white text-sm">
+            {skillCoveragePct !== null && skillCoveragePct !== undefined ? `${skillCoveragePct}%` : 'N/A'}
+          </span>
         </div>
       </div>
 

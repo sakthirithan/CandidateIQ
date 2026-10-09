@@ -63,25 +63,31 @@ export default function CandidateActivityHub({ onNavigateToInterview }) {
 
     acts.forEach((act) => {
       if (!act) return;
-      const interviewId = (typeof act.sourceInterviewId === 'object' && act.sourceInterviewId?._id)
-        ? String(act.sourceInterviewId._id)
-        : String(act.sourceInterviewId || 'general_practice');
+      const parentInterview = (typeof act.sourceInterviewId === 'object' && act.sourceInterviewId) ? act.sourceInterviewId : null;
+      const interviewId = parentInterview?._id ? String(parentInterview._id) : String(act.sourceInterviewId || 'general_practice');
 
-      const sourceTitle = act.sourceTitle || (typeof act.sourceInterviewId === 'object' ? act.sourceInterviewId.jobTitle : null);
+      const sourceTitle = parentInterview?.jobTitle || act.sourceTitle || 'Mock Interview Session';
+      const evalObj = parentInterview?.evaluation || parentInterview?.overallEvaluation || {};
+
+      const overallScore = evalObj.overallScore ?? evalObj.overallInterviewScore ?? act.overallScore ?? 75;
+      const technicalScore = evalObj.technicalScore ?? evalObj.technicalProficiency ?? (act.technicalScore ?? 75);
+      const communicationScore = evalObj.communicationScore ?? evalObj.communicationClarity ?? (act.communicationScore ?? 70);
+      const behavioralScore = evalObj.behaviouralScore ?? evalObj.behaviouralCompetency ?? (act.behavioralScore ?? 75);
+      const answerStructureScore = evalObj.reasoningScore ?? evalObj.problemSolvingRating ?? (act.structureScore ?? 70);
 
       if (!groups[interviewId]) {
         groups[interviewId] = {
           interviewId,
-          title: sourceTitle || 'Mock Interview Session',
-          role: act.targetRole || act.category || 'Software Engineer',
+          title: sourceTitle,
+          role: sourceTitle || act.targetRole || act.category || 'Software Engineer',
           interviewType: act.interviewType || 'Technical + Behavioral',
           createdAt: act.createdAt || new Date().toISOString(),
-          overallScore: act.overallScore ?? 74,
+          overallScore,
           categoryScores: {
-            technical: act.technicalScore ?? (String(act.category).toLowerCase() === 'technical' ? 82 : 78),
-            communication: act.communicationScore ?? (String(act.category).toLowerCase() === 'communication' ? 61 : 72),
-            behavioral: act.behavioralScore ?? (String(act.category).toLowerCase() === 'behavioral' ? 70 : 80),
-            answerStructure: act.structureScore ?? 65
+            technical: technicalScore,
+            communication: communicationScore,
+            behavioral: behavioralScore,
+            answerStructure: answerStructureScore
           },
           improvementPercentage: act.improvementPercentage ?? 9,
           activities: []

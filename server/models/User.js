@@ -35,7 +35,21 @@ const userSchema = new mongoose.Schema(
     activated: {
       type: Boolean,
       default: true
-    }
+    },
+    savedJobViews: [
+      {
+        name: { type: String, required: true },
+        queryParams: { type: Object, default: {} },
+        columnVisibility: { type: Object, default: {} },
+        isDefault: { type: Boolean, default: false },
+        createdAt: { type: Date, default: Date.now }
+      }
+    ],
+    jobTablePreferences: {
+      density: { type: String, enum: ['comfortable', 'compact'], default: 'comfortable' },
+      columnVisibility: { type: Object, default: {} }
+    },
+    savedJobs: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Job' }]
   },
   { timestamps: true }
 );
